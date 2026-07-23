@@ -1,46 +1,52 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#020711" />
-  <meta name="color-scheme" content="dark" />
-  <title>My Forever World</title>
-  <link rel="stylesheet" href="styles.css" />
+  <meta
+    name="viewport"
+    content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover"
+  />
+  <title>Forever World — Scene 1</title>
+  <meta
+    name="description"
+    content="A mobile-first cinematic animation scene built for GitHub Pages."
+  />
+  <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
-  <main class="experience" aria-label="A cinematic animated love story">
-    <canvas id="world" aria-hidden="true"></canvas>
+  <main class="app">
+    <canvas id="scene"></canvas>
 
-    <section id="startScreen" class="start-screen">
-      <div class="start-card">
-        <p class="eyebrow">A SMALL WORLD MADE FOR YOU</p>
-        <h1>My Forever World</h1>
-        <p class="intro-copy">One small kiss. One impossible ocean. A world waiting below.</p>
-        <button id="startButton" type="button">Enter the world</button>
-        <p class="hint">Best viewed vertically</p>
+    <div class="hud">
+      <div class="topbar">
+        <div class="pill">Scene 1 — Ice / Whale / Eye</div>
+        <div class="pill" id="timeLabel">0:00 / 2:13</div>
       </div>
-    </section>
 
-    <div class="top-bar" aria-hidden="true">
-      <span id="sceneLabel">THE ICE</span>
-      <span id="timeLabel">00:00</span>
+      <div class="controls">
+        <button id="playBtn" class="ctrl">Play</button>
+        <button id="pauseBtn" class="ctrl">Pause</button>
+        <button id="restartBtn" class="ctrl">Restart</button>
+      </div>
+
+      <div class="scrub-wrap">
+        <input id="scrub" type="range" min="0" max="133" step="0.01" value="0" />
+      </div>
     </div>
 
-    <div class="controls" aria-label="Animation controls">
-      <button id="pauseButton" type="button" aria-label="Pause animation">Pause</button>
-      <button id="restartButton" type="button" aria-label="Restart animation">Restart</button>
+    <div class="intro" id="intro">
+      <div class="intro-card">
+        <p class="eyebrow">Forever World</p>
+        <h1>Scene 1</h1>
+        <p class="desc">
+          Tap to begin the animation.<br />
+          No audio yet — we’re locking the visuals first.
+        </p>
+        <button id="startBtn" class="start-btn">Start</button>
+      </div>
     </div>
-
-    <div class="progress-track" aria-hidden="true">
-      <div id="progressBar" class="progress-bar"></div>
-    </div>
-
-    <p class="reduced-motion-note" id="reducedMotionNote" hidden>
-      Reduced motion is enabled on this device, so transitions are softened.
-    </p>
   </main>
 
-  <script type="module" src="animation.js"></script>
+  <script src="./animation.js"></script>
 </body>
 </html>
