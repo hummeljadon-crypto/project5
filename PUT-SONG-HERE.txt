@@ -1,6 +1,0 @@
-Place your music file in this folder and name it exactly:
-
-scene-1.mp3
-
-The website will automatically use it after the visitor taps “Tap to begin”.
-Do not upload music publicly unless you have permission to publish it.
