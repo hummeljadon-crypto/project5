@@ -1,50 +1,51 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta
-    name="viewport"
-    content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover"
-  />
-  <title>Forever World — Scene 1</title>
-  <meta
-    name="description"
-    content="A mobile-first cinematic animation scene built for GitHub Pages."
-  />
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#02050a" />
+  <title>Forever World — Icefall</title>
+  <meta name="description" content="A mobile-first cinematic icefall animation." />
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
-  <main class="app">
-    <canvas id="scene"></canvas>
+  <main class="app" aria-label="Forever World animation">
+    <canvas id="scene" aria-label="Animated scene"></canvas>
 
-    <div class="hud">
-      <div class="topbar">
-        <div class="pill">Scene 1 — Ice / Whale / Eye</div>
-        <div class="pill" id="timeLabel">0:00 / 2:13</div>
+    <section class="intro" id="intro">
+      <div class="intro__card">
+        <p class="intro__eyebrow">Forever World</p>
+        <h1>Icefall</h1>
+        <p>A cinematic work in progress.</p>
+        <button id="startButton" type="button">Begin</button>
+      </div>
+    </section>
+
+    <section class="hud" aria-label="Animation controls">
+      <div class="hud__top">
+        <span class="chip">Scene 1</span>
+        <span class="chip" id="clock">0:00 / 3:18</span>
       </div>
 
-      <div class="controls">
-        <button id="playBtn" class="ctrl">Play</button>
-        <button id="pauseBtn" class="ctrl">Pause</button>
-        <button id="restartBtn" class="ctrl">Restart</button>
-      </div>
+      <div class="hud__bottom">
+        <input
+          id="scrubber"
+          class="scrubber"
+          type="range"
+          min="0"
+          max="198"
+          step="0.01"
+          value="0"
+          aria-label="Animation timeline"
+        />
 
-      <div class="scrub-wrap">
-        <input id="scrub" type="range" min="0" max="133" step="0.01" value="0" />
+        <div class="controls">
+          <button id="playButton" type="button">Play</button>
+          <button id="pauseButton" type="button">Pause</button>
+          <button id="restartButton" type="button">Restart</button>
+        </div>
       </div>
-    </div>
-
-    <div class="intro" id="intro">
-      <div class="intro-card">
-        <p class="eyebrow">Forever World</p>
-        <h1>Scene 1</h1>
-        <p class="desc">
-          Tap to begin the animation.<br />
-          No audio yet — we’re locking the visuals first.
-        </p>
-        <button id="startBtn" class="start-btn">Start</button>
-      </div>
-    </div>
+    </section>
   </main>
 
   <script src="./animation.js"></script>
