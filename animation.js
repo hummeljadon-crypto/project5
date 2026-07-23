@@ -11,79 +11,24 @@
   const timeReadout = document.querySelector("#timeReadout");
 
   const VIEW = { w: 1080, h: 1920 };
-  const TOTAL = 192;
+  const TOTAL = 164;
 
   const BEATS = {
-    surface: [0, 6],
-    kissCrack: [6, 12],
-    descent: [12, 90],
-    bottomApproach: [90, 98],
-    bottomFracture: [98, 105],
-    bottomShatter: [105, 112],
-    blackout: [112, 117],
-    fish: [117, 126],
-    whaleReveal: [126, 137],
-    whaleApproach: [137, 149],
-    eye: [149, 155],
-    cosmos: [155, 165],
-    earth: [165, 173],
-    earthDive: [173, 178],
-    return: [178, 186],
-    final: [186, 192],
+    surface: [0, 8],
+    kiss: [8, 12],
+    entry: [12, 18],
+    descent: [18, 78],
+    bottom: [78, 84],
+    fracture: [84, 92],
+    blackout: [92, 96],
+    fish: [96, 103],
+    whale: [103, 114],
+    eye: [114, 119],
+    space: [119, 128],
+    earth: [128, 139],
+    atmosphere: [139, 149],
+    returnSnow: [149, 164],
   };
-
-  const PHRASE_TEXT = [
-    "always love you",
-    "swear",
-    "not scared",
-    "only when youre not here",
-    "this",
-    "F O R E V E R",
-    "only youuu",
-    "us",
-    "you my home",
-    "fixxing everything in me",
-    "a seed",
-    "f o r e v e r",
-    "do i make myself clear",
-    "this for life",
-    "soul to keep",
-    "one day  a baby",
-    "my baby",
-    "crazy...",
-    "for your loveeee",
-    "a blessin from above",
-    "to fall in love",
-    "is to take risk",
-    "im not scared",
-    "always loveee youu",
-  ];
-
-  const PHRASE_STYLES = [
-    "mist", "small", "fracture", "deep", "small", "hero",
-    "mist", "small", "home", "deep", "seed", "mist",
-    "fracture", "deep", "mist", "deep", "small", "fracture",
-    "mist", "deep", "mist", "fracture", "deep", "hero",
-  ];
-
-  const DESCENT_START = BEATS.descent[0];
-  const DESCENT_END = BEATS.descent[1];
-  const PHRASE_SLOT = (DESCENT_END - DESCENT_START) / PHRASE_TEXT.length;
-  const PHRASES = PHRASE_TEXT.map((text, index) => {
-    const start = DESCENT_START + index * PHRASE_SLOT + 0.26;
-    const duration = PHRASE_STYLES[index] === "hero" ? 3.4 : 2.65;
-    return {
-      text,
-      style: PHRASE_STYLES[index],
-      start,
-      end: Math.min(start + duration, DESCENT_END - 0.2),
-      index,
-    };
-  });
-
-  const LIBRARY_TIME = DESCENT_START + PHRASE_SLOT * 8.1;
-  const LIBRARY_DURATION = 1.15;
-  const SEED_TIME = DESCENT_START + PHRASE_SLOT * 10.1;
 
   const state = {
     time: 0,
@@ -104,7 +49,7 @@
   const smooth = (t) => t * t * (3 - 2 * t);
   const easeIn = (t) => t ** 3;
   const easeOut = (t) => 1 - (1 - t) ** 3;
-  const easeInOut = (t) => t < 0.5 ? 4 * t ** 3 : 1 - ((-2 * t + 2) ** 3) / 2;
+  const easeInOut = (t) => (t < 0.5 ? 4 * t ** 3 : 1 - ((-2 * t + 2) ** 3) / 2);
   const hash = (n) => {
     const x = Math.sin(n * 127.1 + 311.7) * 43758.5453123;
     return x - Math.floor(x);
@@ -118,20 +63,6 @@
   function beat(name) {
     const [a, b] = BEATS[name];
     return inv(a, b, state.time);
-  }
-
-  function rgba(rgb, a = 1) {
-    return `rgba(${rgb[0] | 0},${rgb[1] | 0},${rgb[2] | 0},${a})`;
-  }
-
-  function mix(a, b, t) {
-    return [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)];
-  }
-
-  function fmt(t) {
-    const m = Math.floor(t / 60);
-    const s = Math.floor(t % 60).toString().padStart(2, "0");
-    return `${m}:${s}`;
   }
 
   function resize() {
@@ -158,8 +89,13 @@
     );
   }
 
+  function fmt(t) {
+    const minutes = Math.floor(t / 60);
+    const seconds = Math.floor(t % 60).toString().padStart(2, "0");
+    return `${minutes}:${seconds}`;
+  }
+
   function updateUI() {
-    timeline.max = TOTAL;
     timeline.value = state.time.toFixed(2);
     timeline.style.setProperty("--progress", `${(state.time / TOTAL) * 100}%`);
     timeReadout.textContent = `${fmt(state.time)} / ${fmt(TOTAL)}`;
@@ -194,1334 +130,1027 @@
     if (state.playing) state.raf = requestAnimationFrame(tick);
   }
 
+  function rgba(rgb, alpha = 1) {
+    return `rgba(${rgb[0] | 0},${rgb[1] | 0},${rgb[2] | 0},${alpha})`;
+  }
+
+  function mixColor(a, b, t) {
+    return [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)];
+  }
+
   function fillGradient(top, bottom) {
-    const g = ctx.createLinearGradient(0, 0, 0, VIEW.h);
-    g.addColorStop(0, top);
-    g.addColorStop(1, bottom);
-    ctx.fillStyle = g;
+    const gradient = ctx.createLinearGradient(0, 0, 0, VIEW.h);
+    gradient.addColorStop(0, top);
+    gradient.addColorStop(1, bottom);
+    ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, VIEW.w, VIEW.h);
   }
 
-  function drawVignette(strength = 0.42) {
-    const g = ctx.createRadialGradient(VIEW.w * 0.5, VIEW.h * 0.48, 180, VIEW.w * 0.5, VIEW.h * 0.5, 930);
-    g.addColorStop(0, "rgba(0,0,0,0)");
-    g.addColorStop(1, `rgba(0,0,0,${strength})`);
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, VIEW.w, VIEW.h);
+  const snow = Array.from({ length: 110 }, (_, i) => ({
+    x: hash(i + 1) * VIEW.w,
+    y: hash(i + 40) * VIEW.h,
+    r: 1 + hash(i + 80) * 4,
+    speed: 10 + hash(i + 120) * 28,
+    drift: 8 + hash(i + 160) * 22,
+    phase: hash(i + 200) * Math.PI * 2,
+  }));
+
+  const stars = Array.from({ length: 230 }, (_, i) => ({
+    a: hash(i + 301) * Math.PI * 2,
+    r: Math.sqrt(hash(i + 601)) * 780,
+    size: 0.8 + hash(i + 901) * 3.1,
+    alpha: 0.25 + hash(i + 1201) * 0.75,
+    twinkle: 0.8 + hash(i + 1501) * 2.2,
+  }));
+
+  const fish = Array.from({ length: 15 }, (_, i) => ({
+    phase: hash(i + 55) * Math.PI * 2,
+    lane: hash(i + 88),
+    scale: 0.55 + hash(i + 122) * 0.95,
+    speed: 0.55 + hash(i + 166) * 0.7,
+  }));
+
+  function makeShard(seed, cx, cy, radius, points) {
+    const vertices = [];
+    for (let i = 0; i < points; i += 1) {
+      const angle = (i / points) * Math.PI * 2;
+      const r = radius * (0.58 + hash(seed * 30 + i) * 0.55);
+      vertices.push([Math.cos(angle) * r, Math.sin(angle) * r]);
+    }
+    return {
+      cx,
+      cy,
+      vertices,
+      drift: -80 + hash(seed + 1) * 160,
+      fall: 520 + hash(seed + 2) * 520,
+      spin: (-0.65 + hash(seed + 3) * 1.3) * 1.3,
+      delay: hash(seed + 4) * 0.35,
+      light: hash(seed + 5),
+    };
   }
 
-  function drawSnow(count = 90, speed = 1, alpha = 0.7) {
+  const shards = [
+    makeShard(1, 188, 480, 155, 7),
+    makeShard(2, 438, 420, 205, 8),
+    makeShard(3, 726, 500, 180, 7),
+    makeShard(4, 920, 420, 128, 6),
+    makeShard(5, 330, 650, 90, 7),
+    makeShard(6, 620, 670, 112, 7),
+    makeShard(7, 830, 700, 78, 6),
+    makeShard(8, 120, 730, 68, 6),
+  ];
+
+  function drawSnowField(time, alpha = 1) {
     ctx.save();
-    for (let i = 0; i < count; i++) {
-      const x = (hash(i * 2.1) * VIEW.w + Math.sin(state.time * 0.4 + i) * 20) % VIEW.w;
-      const y = (hash(i * 7.7) * VIEW.h + state.time * (10 + hash(i + 9) * 25) * speed) % VIEW.h;
-      const r = 1 + hash(i + 12) * 3;
-      ctx.globalAlpha = alpha * (0.3 + hash(i + 4) * 0.7);
-      ctx.fillStyle = "#f6fbff";
+    ctx.globalAlpha = alpha;
+    for (const flake of snow) {
+      const y = (flake.y + time * flake.speed) % (VIEW.h + 120) - 60;
+      const x = flake.x + Math.sin(time * 0.45 + flake.phase) * flake.drift;
+      ctx.fillStyle = `rgba(246,251,255,${0.32 + flake.r * 0.09})`;
       ctx.beginPath();
-      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.arc(x, y, flake.r, 0, Math.PI * 2);
       ctx.fill();
     }
     ctx.restore();
   }
 
-  function drawAurora(alpha = 0.18) {
+  function drawAurora(time, alpha = 1) {
     ctx.save();
+    ctx.globalAlpha = alpha;
     ctx.globalCompositeOperation = "screen";
-    for (let band = 0; band < 3; band++) {
+    for (let layer = 0; layer < 4; layer += 1) {
+      const yBase = 240 + layer * 78;
+      const gradient = ctx.createLinearGradient(0, yBase - 80, 0, yBase + 220);
+      gradient.addColorStop(0, "rgba(112,255,216,0)");
+      gradient.addColorStop(0.35, layer % 2 ? "rgba(114,209,255,0.18)" : "rgba(112,255,216,0.2)");
+      gradient.addColorStop(0.68, "rgba(156,124,255,0.08)");
+      gradient.addColorStop(1, "rgba(120,210,255,0)");
+      ctx.strokeStyle = gradient;
+      ctx.lineWidth = 44 - layer * 5;
       ctx.beginPath();
-      for (let x = -40; x <= VIEW.w + 40; x += 18) {
+      for (let x = -40; x <= VIEW.w + 40; x += 24) {
         const nx = x / VIEW.w;
-        const y = 170 + band * 72 + Math.sin(nx * 6.2 + state.time * 0.16 + band) * 54 + Math.sin(nx * 12 + band) * 16;
+        const y = yBase + Math.sin(nx * 6.2 + time * 0.13 + layer) * 74 + Math.sin(nx * 12.5 + layer * 2.2) * 22;
         if (x === -40) ctx.moveTo(x, y);
         else ctx.lineTo(x, y);
       }
-      ctx.lineWidth = 45 - band * 10;
-      ctx.strokeStyle = band === 1 ? `rgba(144,255,227,${alpha})` : `rgba(126,199,255,${alpha * 0.82})`;
-      ctx.shadowBlur = 45;
-      ctx.shadowColor = ctx.strokeStyle;
       ctx.stroke();
     }
-
-    // D easter egg
-    ctx.globalAlpha = alpha * 0.32;
-    ctx.lineWidth = 12;
-    ctx.strokeStyle = "rgba(230,249,255,0.65)";
-    ctx.beginPath();
-    ctx.moveTo(810, 122);
-    ctx.lineTo(810, 218);
-    ctx.bezierCurveTo(900, 218, 900, 122, 810, 122);
-    ctx.stroke();
     ctx.restore();
   }
 
-  function drawSnowField(horizon = 1220) {
-    const g = ctx.createLinearGradient(0, horizon - 80, 0, VIEW.h);
-    g.addColorStop(0, "#dceef8");
-    g.addColorStop(0.55, "#f6fbff");
-    g.addColorStop(1, "#d9eaf4");
-    ctx.fillStyle = g;
-    ctx.beginPath();
-    ctx.moveTo(0, VIEW.h);
-    ctx.lineTo(0, horizon + 25);
-    ctx.quadraticCurveTo(230, horizon - 38, 520, horizon + 8);
-    ctx.quadraticCurveTo(820, horizon + 48, VIEW.w, horizon - 18);
-    ctx.lineTo(VIEW.w, VIEW.h);
-    ctx.closePath();
-    ctx.fill();
-
+  function drawShootingStar(progress, y = 320) {
+    if (progress <= 0 || progress >= 1) return;
+    const p = easeInOut(progress);
+    const x = lerp(-150, VIEW.w + 180, p);
+    const yy = y + p * 190;
     ctx.save();
-    ctx.strokeStyle = "rgba(118,157,182,0.16)";
-    ctx.lineWidth = 3;
-    for (let i = 0; i < 7; i++) {
-      const y = horizon + 70 + i * 66;
-      ctx.beginPath();
-      ctx.moveTo(-30, y);
-      ctx.bezierCurveTo(260, y - 30, 720, y + 35, VIEW.w + 40, y - 8);
-      ctx.stroke();
-    }
+    ctx.globalCompositeOperation = "screen";
+    const gradient = ctx.createLinearGradient(x - 210, yy - 120, x, yy);
+    gradient.addColorStop(0, "rgba(255,255,255,0)");
+    gradient.addColorStop(0.72, "rgba(175,226,255,0.26)");
+    gradient.addColorStop(1, "rgba(255,255,255,0.96)");
+    ctx.strokeStyle = gradient;
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.moveTo(x - 210, yy - 120);
+    ctx.lineTo(x, yy);
+    ctx.stroke();
+    ctx.fillStyle = "rgba(255,255,255,0.98)";
+    ctx.beginPath();
+    ctx.arc(x, yy, 4, 0, Math.PI * 2);
+    ctx.fill();
     ctx.restore();
   }
 
-  function drawPenguin(x, y, scale, facing = 1, lean = 0, cuddle = 0) {
+  function drawPenguin(x, y, scale, facing = 1, lean = 0, hold = false) {
     ctx.save();
     ctx.translate(x, y);
     ctx.scale(scale * facing, scale);
     ctx.rotate(lean);
 
-    ctx.fillStyle = "rgba(20,28,36,0.19)";
+    ctx.fillStyle = "rgba(0,0,0,0.18)";
     ctx.beginPath();
-    ctx.ellipse(0, 80, 54, 17, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, 58, 38, 11, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.fillStyle = "#d59d3a";
+    ctx.fillStyle = "#d6a348";
     ctx.beginPath();
-    ctx.ellipse(-18, 67, 17, 8, -0.08, 0, Math.PI * 2);
-    ctx.ellipse(18, 67, 17, 8, 0.08, 0, Math.PI * 2);
+    ctx.ellipse(-15, 50, 14, 6, 0.12, 0, Math.PI * 2);
+    ctx.ellipse(14, 50, 14, 6, -0.12, 0, Math.PI * 2);
     ctx.fill();
 
-    const body = ctx.createLinearGradient(-38, -25, 42, 65);
-    body.addColorStop(0, "#26313d");
-    body.addColorStop(0.5, "#111821");
-    body.addColorStop(1, "#050a10");
+    const body = ctx.createLinearGradient(-28, -38, 28, 45);
+    body.addColorStop(0, "#151b22");
+    body.addColorStop(0.55, "#0b1016");
+    body.addColorStop(1, "#1d2530");
     ctx.fillStyle = body;
     ctx.beginPath();
-    ctx.ellipse(0, 8, 52, 76, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, 2, 34, 52, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.fillStyle = "#edf6fb";
+    ctx.fillStyle = "#f3f7f7";
     ctx.beginPath();
-    ctx.ellipse(8, 18, 34, 53, -0.05, 0, Math.PI * 2);
+    ctx.ellipse(4, 10, 24, 39, -0.05, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.fillStyle = "#111821";
+    ctx.fillStyle = "#11171e";
     ctx.beginPath();
-    ctx.arc(2, -62, 40, 0, Math.PI * 2);
+    ctx.ellipse(4, -43, 29, 27, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.fillStyle = "#f4f8fb";
+    ctx.fillStyle = "#f5f8f8";
     ctx.beginPath();
-    ctx.ellipse(14, -55, 24, 30, -0.05, 0, Math.PI * 2);
+    ctx.ellipse(11, -39, 18, 19, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.fillStyle = "#0c1118";
+    ctx.fillStyle = "#0b0f14";
     ctx.beginPath();
-    ctx.arc(25, -65, 4.1, 0, Math.PI * 2);
+    ctx.arc(17, -46, 2.8, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.fillStyle = "#d89f3e";
+    ctx.fillStyle = "#d79c3d";
     ctx.beginPath();
-    ctx.moveTo(32, -51);
-    ctx.lineTo(61, -43);
-    ctx.lineTo(31, -34);
+    ctx.moveTo(22, -38);
+    ctx.lineTo(47, -32);
+    ctx.lineTo(21, -27);
     ctx.closePath();
     ctx.fill();
 
-    // flipper, moved inward during cuddle
-    ctx.fillStyle = "#0b1118";
+    ctx.fillStyle = "#0b1016";
     ctx.beginPath();
-    ctx.ellipse(-43 + cuddle * 21, 8, 15, 45, -0.25 + cuddle * 0.18, 0, Math.PI * 2);
+    if (hold) {
+      ctx.moveTo(-24, -4);
+      ctx.quadraticCurveTo(-54, 8, -67, 25);
+      ctx.quadraticCurveTo(-45, 19, -20, 14);
+    } else {
+      ctx.moveTo(-26, -5);
+      ctx.quadraticCurveTo(-43, 10, -38, 34);
+      ctx.quadraticCurveTo(-26, 22, -18, 10);
+    }
+    ctx.closePath();
     ctx.fill();
 
     ctx.restore();
   }
 
-  function drawSurfaceScene() {
-    fillGradient("#071325", "#9cc8df");
-    drawAurora(0.17);
-    drawSnow(95, 0.9, 0.72);
-    drawSnowField(1220);
+  function drawSurfaceScene(progress, finalPose = false) {
+    fillGradient("#102238", "#9cc7dd");
+    drawAurora(state.time, finalPose ? 0.88 : 0.18);
 
-    const kissP = beat("kissCrack");
-    const slow = smooth(inv(0.05, 0.65, kissP));
-    const leftX = lerp(395, 494, slow);
-    const rightX = lerp(685, 586, slow);
-    const y = 1190;
+    ctx.fillStyle = "rgba(236,247,252,0.92)";
+    ctx.beginPath();
+    ctx.moveTo(0, 1260);
+    ctx.quadraticCurveTo(260, 1180, 520, 1235);
+    ctx.quadraticCurveTo(790, 1305, 1080, 1200);
+    ctx.lineTo(1080, 1920);
+    ctx.lineTo(0, 1920);
+    ctx.closePath();
+    ctx.fill();
 
-    drawPenguin(leftX, y, 1.12, 1, lerp(0, 0.12, slow));
-    drawPenguin(rightX, y, 1.12, -1, lerp(0, -0.12, slow));
-
-    if (kissP > 0.22) {
-      drawOpeningCrack(inv(0.22, 1, kissP));
+    ctx.fillStyle = "rgba(193,220,232,0.22)";
+    for (let i = 0; i < 7; i += 1) {
+      ctx.beginPath();
+      ctx.ellipse(110 + i * 160, 1370 + Math.sin(i) * 28, 120, 22, -0.08 + i * 0.02, 0, Math.PI * 2);
+      ctx.fill();
     }
 
-    if (kissP > 0.38) {
-      const a = Math.sin(inv(0.38, 1, kissP) * Math.PI) * 0.34;
-      const g = ctx.createRadialGradient(540, 1098, 0, 540, 1098, 180);
-      g.addColorStop(0, `rgba(255,255,255,${a})`);
-      g.addColorStop(1, "rgba(255,255,255,0)");
-      ctx.fillStyle = g;
-      ctx.fillRect(300, 860, 480, 470);
+    drawSnowField(state.time, finalPose ? 0.9 : 0.72);
+
+    if (finalPose) {
+      drawPenguin(470, 1280, 1.5, 1, 0.02, true);
+      drawPenguin(610, 1280, 1.5, -1, -0.02, true);
+      ctx.save();
+      ctx.strokeStyle = "rgba(20,28,36,0.9)";
+      ctx.lineWidth = 14;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(520, 1290);
+      ctx.quadraticCurveTo(540, 1307, 560, 1290);
+      ctx.stroke();
+      ctx.restore();
+      return;
     }
 
-    drawVignette(0.34);
+    const kiss = active("kiss") ? beat("kiss") : state.time > BEATS.kiss[1] ? 1 : 0;
+    const approach = smooth(progress);
+    const leftX = lerp(435, 492, approach);
+    const rightX = lerp(645, 588, approach);
+    const slow = smooth(kiss);
+    drawPenguin(leftX, 1260, 1.42, 1, lerp(0, 0.08, slow));
+    drawPenguin(rightX, 1260, 1.42, -1, lerp(0, -0.08, slow));
   }
 
-  function drawOpeningCrack(p) {
+  function drawOpeningCrack(progress, yOffset = 0) {
+    if (progress <= 0) return;
+    const p = easeOut(progress);
     ctx.save();
-    ctx.lineCap = "round";
+    ctx.translate(0, yOffset);
+    ctx.shadowBlur = 20;
+    ctx.shadowColor = "rgba(117,210,255,0.55)";
+    ctx.strokeStyle = "rgba(95,171,214,0.92)";
+    ctx.lineWidth = 4;
     ctx.lineJoin = "round";
-    const head = easeOut(p);
-    const startX = 540;
-    const startY = 1236;
     const points = [
-      [startX, startY],
-      [516, 1288],
-      [548, 1342],
-      [505, 1402],
-      [544, 1468],
-      [486, 1535],
-      [521, 1605],
+      [542, 1290], [520, 1340], [555, 1384], [508, 1436], [548, 1496],
+      [498, 1560], [530, 1625], [474, 1690], [506, 1762], [452, 1840], [474, 1938],
     ];
-    const visible = Math.max(1, Math.floor(head * (points.length - 1)) + 1);
-
-    ctx.shadowBlur = 24;
-    ctx.shadowColor = "rgba(154,226,255,0.65)";
-    ctx.strokeStyle = "rgba(105,176,216,0.9)";
-    ctx.lineWidth = 5;
+    const visible = Math.max(2, Math.floor(lerp(2, points.length, p)));
     ctx.beginPath();
     ctx.moveTo(points[0][0], points[0][1]);
-    for (let i = 1; i < visible; i++) ctx.lineTo(points[i][0], points[i][1]);
-    if (visible < points.length) {
-      const a = points[visible - 1];
-      const b = points[visible];
-      const local = head * (points.length - 1) - (visible - 1);
-      ctx.lineTo(lerp(a[0], b[0], local), lerp(a[1], b[1], local));
-    }
+    for (let i = 1; i < visible; i += 1) ctx.lineTo(points[i][0], points[i][1]);
     ctx.stroke();
 
-    // secondary fractures and hidden date shape
-    ctx.globalAlpha = clamp(p * 1.8);
-    ctx.lineWidth = 2.2;
-    const branches = [
-      [[531, 1320], [462, 1300], [417, 1328]],
-      [[526, 1419], [610, 1390], [651, 1421]],
-      [[505, 1517], [423, 1502], [378, 1536]],
-    ];
-    for (const branch of branches) {
+    ctx.lineWidth = 1.5;
+    ctx.globalAlpha = 0.72;
+    for (let b = 0; b < visible - 2; b += 2) {
+      const [x, y] = points[b + 1];
       ctx.beginPath();
-      ctx.moveTo(branch[0][0], branch[0][1]);
-      ctx.lineTo(branch[1][0], branch[1][1]);
-      ctx.lineTo(branch[2][0], branch[2][1]);
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + (b % 4 ? -1 : 1) * (50 + b * 4), y + 42 + b * 4);
+      ctx.lineTo(x + (b % 4 ? -1 : 1) * (78 + b * 4), y + 76 + b * 5);
       ctx.stroke();
     }
-
-    ctx.globalAlpha = 0.13 * p;
-    ctx.fillStyle = "#dff5ff";
-    ctx.font = "22px Georgia, serif";
-    ctx.fillText("17·03·2026", 574, 1445);
     ctx.restore();
   }
 
-  function drawCrackTransition() {
-    // Cross-section reveal: keep surface and penguins above while the camera lowers.
-    const p = beat("kissCrack");
-    drawSurfaceScene();
-    if (p < 0.58) return;
-
-    const reveal = smooth(inv(0.58, 1, p));
-    ctx.save();
-    const top = lerp(VIEW.h + 40, 760, reveal);
-    const iceGradient = ctx.createLinearGradient(0, top, 0, VIEW.h);
-    iceGradient.addColorStop(0, "rgba(212,243,255,0.96)");
-    iceGradient.addColorStop(0.38, "rgba(126,208,243,0.98)");
-    iceGradient.addColorStop(1, "rgba(28,96,154,1)");
-    ctx.fillStyle = iceGradient;
-    ctx.fillRect(0, top, VIEW.w, VIEW.h - top);
-
-    for (let i = 0; i < 10; i++) {
-      const y = top + 35 + i * 90;
-      ctx.strokeStyle = `rgba(236,250,255,${0.18 - i * 0.01})`;
-      ctx.lineWidth = 4;
-      ctx.beginPath();
-      ctx.moveTo(-40, y);
-      ctx.bezierCurveTo(270, y - 28, 700, y + 30, VIEW.w + 40, y - 5);
-      ctx.stroke();
-    }
-
-    // Continue the same crack into the revealed iceberg.
-    const crackTop = top - 5;
-    ctx.strokeStyle = "rgba(140,218,255,0.86)";
-    ctx.shadowBlur = 22;
-    ctx.shadowColor = "rgba(116,210,255,0.6)";
-    ctx.lineWidth = 6;
-    ctx.beginPath();
-    ctx.moveTo(540, crackTop);
-    ctx.lineTo(510, crackTop + 145);
-    ctx.lineTo(564, crackTop + 298);
-    ctx.lineTo(498, crackTop + 462);
-    ctx.lineTo(548, crackTop + 620);
-    ctx.lineTo(495, crackTop + 810);
-    ctx.stroke();
-    ctx.restore();
-  }
-
-  function icePalette(depth) {
+  function iceColorAtDepth(p) {
     const stops = [
-      [0.00, [232, 249, 255]],
-      [0.18, [187, 235, 252]],
-      [0.38, [104, 201, 239]],
-      [0.58, [47, 129, 196]],
-      [0.78, [15, 60, 124]],
-      [1.00, [3, 18, 48]],
+      [0, [225, 247, 255]],
+      [0.2, [175, 230, 249]],
+      [0.45, [69, 161, 215]],
+      [0.7, [18, 68, 132]],
+      [0.88, [7, 27, 66]],
+      [1, [2, 9, 26]],
     ];
-    for (let i = 0; i < stops.length - 1; i++) {
-      const [pa, ca] = stops[i];
-      const [pb, cb] = stops[i + 1];
-      if (depth <= pb) return mix(ca, cb, inv(pa, pb, depth));
+    for (let i = 0; i < stops.length - 1; i += 1) {
+      const [ap, ac] = stops[i];
+      const [bp, bc] = stops[i + 1];
+      if (p <= bp) return mixColor(ac, bc, inv(ap, bp, p));
     }
     return stops.at(-1)[1];
   }
 
-  function descentDepth() {
-    return smooth(inv(DESCENT_START, DESCENT_END, state.time));
+  function drawIceBand(worldY, camY, index, depth) {
+    const sy = worldY - camY + 340;
+    const wobble = Math.sin(worldY * 0.0017 + index * 1.3) * 56 + Math.sin(worldY * 0.006 + index) * 18;
+    const thickness = 150 + hash(index + 20) * 250;
+    const base = iceColorAtDepth(depth);
+    const lighter = mixColor(base, [255, 255, 255], 0.22);
+    const darker = mixColor(base, [0, 9, 24], 0.24);
+
+    const gradient = ctx.createLinearGradient(0, sy - thickness, VIEW.w, sy + thickness);
+    gradient.addColorStop(0, rgba(lighter, 0.42));
+    gradient.addColorStop(0.45, rgba(base, 0.8));
+    gradient.addColorStop(1, rgba(darker, 0.9));
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.moveTo(-120, sy - thickness * 0.55);
+    ctx.bezierCurveTo(220, sy - thickness + wobble, 700, sy - thickness * 0.42 - wobble, 1200, sy - thickness * 0.75);
+    ctx.lineTo(1200, sy + thickness * 0.65);
+    ctx.bezierCurveTo(760, sy + thickness + wobble * 0.4, 290, sy + thickness * 0.35 - wobble * 0.4, -120, sy + thickness * 0.82);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.strokeStyle = rgba(lighter, 0.2);
+    ctx.lineWidth = 3;
+    ctx.stroke();
   }
 
-  function cameraWorldY() {
-    const p = descentDepth();
-    const drift = Math.sin(p * Math.PI * 7) * 170 + Math.sin(p * Math.PI * 15) * 55;
-    return p * 11800 + drift;
-  }
-
-  function drawIceFace() {
-    const depth = descentDepth();
-    const camY = cameraWorldY();
-    const base = icePalette(depth);
-    const darker = mix(base, [0, 7, 24], 0.42 + depth * 0.2);
-    fillGradient(rgba(mix(base, [255, 255, 255], 0.1), 1), rgba(darker, 1));
-
-    // broad, solid glacial bands filling the entire frame
-    const bandH = 330;
-    const firstBand = Math.floor((camY - 1200) / bandH);
-    for (let i = firstBand; i < firstBand + 11; i++) {
-      const worldY = i * bandH;
-      const sy = worldY - camY + 480;
-      const localDepth = clamp(depth + (sy - VIEW.h * 0.5) / 9000, 0, 1);
-      const bandBase = icePalette(localDepth);
-      const tint = hash(i * 1.41);
-      const fill = mix(bandBase, tint > 0.55 ? [255, 255, 255] : [3, 21, 55], tint > 0.55 ? 0.08 : 0.12);
-
+  function drawIceFacets(camY, depth) {
+    for (let i = 0; i < 34; i += 1) {
+      const worldY = i * 430 - 900;
+      const loop = 34 * 430;
+      const wrapped = ((worldY - camY * 0.08) % loop + loop) % loop;
+      const sy = wrapped - 520;
+      const x = hash(i + 44) * VIEW.w;
+      const radius = 90 + hash(i + 90) * 240;
+      const base = iceColorAtDepth(depth);
       ctx.save();
+      ctx.translate(x, sy);
+      ctx.rotate((-0.4 + hash(i + 140) * 0.8) + Math.sin(state.time * 0.05 + i) * 0.015);
+      ctx.fillStyle = rgba(mixColor(base, [255, 255, 255], hash(i + 160) * 0.25), 0.09 + hash(i + 200) * 0.11);
       ctx.beginPath();
-      ctx.moveTo(-80, sy - 80);
-      for (let x = -80; x <= VIEW.w + 80; x += 120) {
-        const wobble = (hash(i * 21 + x * 0.03) - 0.5) * 64;
-        ctx.lineTo(x, sy + wobble);
-      }
-      for (let x = VIEW.w + 80; x >= -80; x -= 120) {
-        const wobble = (hash(i * 39 + x * 0.05) - 0.5) * 55;
-        ctx.lineTo(x, sy + bandH + wobble);
+      const points = 5 + (i % 4);
+      for (let k = 0; k < points; k += 1) {
+        const a = (k / points) * Math.PI * 2;
+        const r = radius * (0.6 + hash(i * 20 + k) * 0.5);
+        const px = Math.cos(a) * r;
+        const py = Math.sin(a) * r * 0.66;
+        if (k === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
       }
       ctx.closePath();
-      ctx.fillStyle = rgba(fill, 0.93);
-      ctx.fill();
-
-      const edge = ctx.createLinearGradient(0, sy, 0, sy + bandH);
-      edge.addColorStop(0, "rgba(255,255,255,0.14)");
-      edge.addColorStop(0.18, "rgba(255,255,255,0.02)");
-      edge.addColorStop(1, `rgba(0,17,52,${0.1 + localDepth * 0.22})`);
-      ctx.fillStyle = edge;
       ctx.fill();
       ctx.restore();
     }
+  }
 
-    // solid facets and depth planes
-    for (let i = 0; i < 28; i++) {
-      const worldY = Math.floor((camY - 1400) / 460) * 460 + i * 430;
-      const sy = worldY - camY + 260;
-      const x = hash(i * 9.7 + Math.floor(camY / 460)) * 930 - 80;
-      const w = 160 + hash(i * 4.3) * 380;
-      const h = 180 + hash(i * 2.9) * 390;
-      const skew = (hash(i + 88) - 0.5) * 130;
-      const light = hash(i + 100) > 0.5;
-      ctx.save();
-      ctx.beginPath();
-      ctx.moveTo(x, sy);
-      ctx.lineTo(x + w, sy + skew * 0.25);
-      ctx.lineTo(x + w * 0.82, sy + h);
-      ctx.lineTo(x - w * 0.08, sy + h + skew * 0.35);
-      ctx.closePath();
-      ctx.fillStyle = light
-        ? `rgba(229,248,255,${0.045 + (1 - depth) * 0.05})`
-        : `rgba(2,24,62,${0.08 + depth * 0.1})`;
-      ctx.fill();
-      ctx.strokeStyle = light ? "rgba(248,254,255,0.08)" : "rgba(14,52,101,0.12)";
-      ctx.lineWidth = 3;
-      ctx.stroke();
-      ctx.restore();
-    }
-
-    // old compressed layers and trapped bubbles
+  function drawTrappedBubbles(camY, depth) {
+    if (depth > 0.55) return;
     ctx.save();
-    for (let i = 0; i < 18; i++) {
-      const y = ((i * 127 - camY * (0.72 + (i % 3) * 0.09)) % (VIEW.h + 280) + VIEW.h + 280) % (VIEW.h + 280) - 140;
-      ctx.strokeStyle = `rgba(237,250,255,${0.05 + (1 - depth) * 0.09})`;
-      ctx.lineWidth = 2 + (i % 3);
+    for (let i = 0; i < 48; i += 1) {
+      const wy = i * 310 + hash(i + 15) * 180;
+      const loop = 48 * 310;
+      const sy = ((wy - camY * 0.72) % loop + loop) % loop - 300;
+      const x = 80 + hash(i + 60) * 920;
+      const r = 4 + hash(i + 100) * 16;
+      ctx.strokeStyle = `rgba(238,250,255,${0.08 + (1 - depth) * 0.13})`;
+      ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.moveTo(-70, y);
-      ctx.bezierCurveTo(270, y - 34, 750, y + 35, VIEW.w + 70, y - 12);
-      ctx.stroke();
-    }
-    for (let i = 0; i < 60; i++) {
-      const x = hash(i * 7.31) * VIEW.w;
-      const y = ((hash(i * 13.2) * 12500 - camY * (0.88 + hash(i) * 0.18)) % (VIEW.h + 100) + VIEW.h + 100) % (VIEW.h + 100) - 50;
-      const r = 2 + hash(i + 90) * 7;
-      ctx.globalAlpha = lerp(0.24, 0.04, depth) * (0.5 + hash(i + 5));
-      ctx.strokeStyle = "#effbff";
-      ctx.lineWidth = 1.4;
-      ctx.beginPath();
-      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.ellipse(x, sy, r, r * 1.35, hash(i + 140), 0, Math.PI * 2);
       ctx.stroke();
     }
     ctx.restore();
-
-    drawHuntingCracks(depth, camY);
-    drawLibraryFlash();
-    drawSeedPulse();
-    drawCurrentPhrase();
-    drawVignette(0.26 + depth * 0.36);
   }
 
-  function crackChaseAmount() {
-    const p = descentDepth();
-    const wave = Math.sin(p * Math.PI * 9 - 0.8) * 0.5 + 0.5;
-    const bursts = smooth(inv(0.05, 0.18, p)) * (1 - smooth(inv(0.88, 0.98, p)));
-    return clamp(0.18 + wave * 0.8 * bursts);
+  function crackX(worldY, branch = 0) {
+    return 540 + Math.sin(worldY * 0.00125 + branch * 1.7) * (190 + branch * 34) + Math.sin(worldY * 0.0048 + branch) * 65;
   }
 
-  function drawHuntingCracks(depth, camY) {
-    const chase = crackChaseAmount();
-    const headY = lerp(-260, VIEW.h * 0.78, chase);
-    const xBase = 520 + Math.sin(state.time * 0.62) * 150 + Math.sin(state.time * 0.19) * 70;
+  function drawPursuitCracks(camY, depth, intensity) {
+    const cameraFront = camY + 420;
+    const pulse = Math.sin(state.time * 0.72) * 420;
+    const crackFront = camY + lerp(-350, 1120, intensity) + pulse;
 
     ctx.save();
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
-    ctx.shadowBlur = 30 + chase * 28;
-    ctx.shadowColor = "rgba(122,218,255,0.75)";
-    ctx.strokeStyle = `rgba(171,232,255,${0.35 + chase * 0.58})`;
-    ctx.lineWidth = 4.5 + chase * 3;
-
-    ctx.beginPath();
-    ctx.moveTo(xBase - 110, -80);
-    const steps = 13;
-    for (let i = 1; i <= steps; i++) {
-      const y = lerp(-80, headY, i / steps);
-      const x = xBase + Math.sin(i * 1.37 + state.time * 1.08) * (42 + i * 6) + (hash(i + Math.floor(camY / 500)) - 0.5) * 55;
-      ctx.lineTo(x, y);
-    }
-    ctx.stroke();
-
-    // Branches actually cross the camera path and appear to overtake us.
-    for (let b = 0; b < 5; b++) {
-      const by = lerp(-40, headY, (b + 2) / 7);
-      const dir = b % 2 === 0 ? -1 : 1;
-      const bx = xBase + Math.sin(b * 2 + state.time) * 80;
-      ctx.lineWidth = 2.1 + chase * 2;
+    for (let branch = 0; branch < 4; branch += 1) {
       ctx.beginPath();
-      ctx.moveTo(bx, by);
-      ctx.lineTo(bx + dir * (120 + chase * 130), by + 70);
-      ctx.lineTo(bx + dir * (190 + chase * 180), by + 15);
-      ctx.stroke();
-    }
-
-    if (chase > 0.72) {
-      const flash = (chase - 0.72) / 0.28;
-      const g = ctx.createRadialGradient(xBase, headY, 0, xBase, headY, 260);
-      g.addColorStop(0, `rgba(221,249,255,${flash * 0.42})`);
-      g.addColorStop(1, "rgba(221,249,255,0)");
-      ctx.fillStyle = g;
-      ctx.fillRect(xBase - 300, headY - 300, 600, 600);
-    }
-    ctx.restore();
-  }
-
-  function drawLibraryFlash() {
-    const p = inv(LIBRARY_TIME, LIBRARY_TIME + LIBRARY_DURATION, state.time);
-    if (p <= 0 || p >= 1) return;
-    const alpha = Math.sin(p * Math.PI);
-    const slide = lerp(220, -180, easeInOut(p));
-
-    ctx.save();
-    ctx.globalAlpha = alpha * 0.96;
-    ctx.translate(slide, 0);
-
-    const g = ctx.createRadialGradient(600, 910, 40, 600, 910, 430);
-    g.addColorStop(0, "rgba(159,209,235,0.25)");
-    g.addColorStop(0.55, "rgba(8,24,47,0.65)");
-    g.addColorStop(1, "rgba(0,4,12,0)");
-    ctx.fillStyle = g;
-    ctx.fillRect(170, 420, 860, 980);
-
-    // arch
-    ctx.strokeStyle = "rgba(197,229,246,0.35)";
-    ctx.lineWidth = 10;
-    ctx.beginPath();
-    ctx.moveTo(275, 1360);
-    ctx.lineTo(275, 760);
-    ctx.quadraticCurveTo(600, 430, 930, 760);
-    ctx.lineTo(930, 1360);
-    ctx.stroke();
-
-    for (let shelf = 0; shelf < 4; shelf++) {
-      const x = 330 + shelf * 150;
-      ctx.fillStyle = "rgba(17,24,35,0.88)";
-      ctx.fillRect(x, 650, 110, 630);
-      for (let row = 0; row < 7; row++) {
-        const y = 700 + row * 80;
-        ctx.fillStyle = "rgba(210,231,241,0.12)";
-        ctx.fillRect(x + 8, y, 94, 4);
-        for (let book = 0; book < 5; book++) {
-          const h = 22 + hash(shelf * 30 + row * 7 + book) * 45;
-          ctx.fillStyle = `rgba(${50 + book * 16},${70 + row * 6},${96 + shelf * 10},0.78)`;
-          ctx.fillRect(x + 12 + book * 17, y - h, 12, h);
+      let started = false;
+      for (let wy = Math.max(0, camY - 500); wy <= camY + VIEW.h + 900; wy += 70) {
+        if (wy > crackFront - branch * 180) break;
+        const sy = wy - camY + 240;
+        const x = crackX(wy, branch) + (branch - 1.5) * 70;
+        if (!started) {
+          ctx.moveTo(x, sy);
+          started = true;
+        } else {
+          ctx.lineTo(x, sy);
         }
       }
+      const near = clamp(1 - Math.abs(crackFront - cameraFront) / 1700);
+      ctx.shadowBlur = 16 + near * 30;
+      ctx.shadowColor = "rgba(117,222,255,0.65)";
+      ctx.strokeStyle = `rgba(186,235,255,${0.22 + near * 0.62})`;
+      ctx.lineWidth = 2.2 + near * 3.4;
+      ctx.stroke();
     }
 
-    // Tiny llamas together on a shelf.
-    drawTinyLlama(531, 1054, 0.95);
-    drawTinyLlama(563, 1058, 0.95);
+    if (depth > 0.35) {
+      ctx.globalAlpha = 0.18 + intensity * 0.26;
+      for (let i = 0; i < 9; i += 1) {
+        const wy = camY + 200 + i * 240;
+        if (wy > crackFront) continue;
+        const sy = wy - camY + 240;
+        const x = crackX(wy, i % 3);
+        ctx.beginPath();
+        ctx.moveTo(x, sy);
+        ctx.lineTo(x + (i % 2 ? -1 : 1) * (110 + i * 8), sy + 80);
+        ctx.lineTo(x + (i % 2 ? -1 : 1) * (160 + i * 12), sy + 170);
+        ctx.strokeStyle = "rgba(189,234,255,0.52)";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
 
-    ctx.fillStyle = "rgba(238,248,255,0.45)";
-    ctx.font = "bold 24px Georgia, serif";
-    ctx.fillText("D", 760, 802);
+  function drawIceDescent(progress) {
+    const p = smooth(progress);
+    const depth = p;
+    const camY = p * 13200;
+    const sway = Math.sin(p * Math.PI * 5.5) * 70 + Math.sin(p * Math.PI * 13) * 24;
+    const tilt = Math.sin(p * Math.PI * 4) * 0.012;
+    const base = iceColorAtDepth(depth);
+    const top = mixColor(base, [255, 255, 255], lerp(0.12, 0, depth));
+    const bottom = mixColor(base, [0, 4, 15], lerp(0.06, 0.48, depth));
+    fillGradient(rgba(top), rgba(bottom));
 
-    // pages suspended in ice
-    for (let i = 0; i < 8; i++) {
-      const x = 300 + hash(i + 6) * 650;
-      const y = 610 + hash(i + 26) * 660;
+    ctx.save();
+    ctx.translate(sway, 0);
+    ctx.rotate(tilt);
+
+    for (let i = -4; i < 34; i += 1) {
+      drawIceBand(i * 470, camY, i, depth);
+    }
+    drawIceFacets(camY, depth);
+    drawTrappedBubbles(camY, depth);
+    drawPursuitCracks(camY, depth, clamp(0.2 + p * 0.95));
+
+    if (depth > 0.7) {
       ctx.save();
-      ctx.translate(x, y);
-      ctx.rotate((hash(i + 80) - 0.5) * 1.5);
-      ctx.fillStyle = "rgba(241,248,255,0.24)";
-      ctx.fillRect(-16, -10, 32, 20);
+      ctx.globalAlpha = inv(0.7, 1, depth) * 0.6;
+      for (let i = 0; i < 16; i += 1) {
+        const x = hash(i + 401) * VIEW.w;
+        const y = ((hash(i + 451) * VIEW.h + state.time * (80 + hash(i + 501) * 110)) % (VIEW.h + 240)) - 120;
+        ctx.fillStyle = "rgba(184,225,247,0.2)";
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(x + 10 + hash(i + 551) * 22, y + 26 + hash(i + 601) * 34);
+        ctx.lineTo(x - 12, y + 38);
+        ctx.closePath();
+        ctx.fill();
+      }
       ctx.restore();
     }
+
     ctx.restore();
+
+    const edgeShade = ctx.createRadialGradient(VIEW.w * 0.52, VIEW.h * 0.48, 100, VIEW.w * 0.52, VIEW.h * 0.48, 900);
+    edgeShade.addColorStop(0, "rgba(0,0,0,0)");
+    edgeShade.addColorStop(1, `rgba(0,4,14,${0.08 + depth * 0.26})`);
+    ctx.fillStyle = edgeShade;
+    ctx.fillRect(0, 0, VIEW.w, VIEW.h);
   }
 
-  function drawTinyLlama(x, y, s) {
+  function drawEntry(progress) {
+    const p = easeInOut(progress);
+    fillGradient("#102338", "#9ec8db");
+    const shift = p * 1420;
     ctx.save();
-    ctx.translate(x, y);
-    ctx.scale(s, s);
-    ctx.fillStyle = "rgba(230,238,244,0.92)";
-    ctx.beginPath();
-    ctx.ellipse(0, 0, 18, 12, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillRect(10, -23, 8, 23);
-    ctx.beginPath();
-    ctx.ellipse(18, -24, 9, 7, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillRect(-11, 8, 4, 16);
-    ctx.fillRect(5, 8, 4, 16);
-    ctx.beginPath();
-    ctx.moveTo(14, -30);
-    ctx.lineTo(16, -40);
-    ctx.lineTo(20, -30);
-    ctx.fill();
+    ctx.translate(0, -shift);
+    drawSurfaceScene(1);
+    drawOpeningCrack(1, 0);
     ctx.restore();
-  }
-
-  function drawSeedPulse() {
-    const p = inv(SEED_TIME - 0.4, SEED_TIME + 3.2, state.time);
-    if (p <= 0 || p >= 1) return;
-    const pulseCount = 8;
-    const phase = p * pulseCount;
-    const pulse = Math.sin((phase % 1) * Math.PI);
-    const x = 720;
-    const y = 1130;
-    const g = ctx.createRadialGradient(x, y, 0, x, y, 130 + pulse * 65);
-    g.addColorStop(0, `rgba(244,255,198,${0.95})`);
-    g.addColorStop(0.2, `rgba(177,255,188,${0.44 + pulse * 0.24})`);
-    g.addColorStop(1, "rgba(91,230,255,0)");
-    ctx.fillStyle = g;
-    ctx.fillRect(x - 220, y - 220, 440, 440);
-    ctx.fillStyle = "rgba(247,255,217,0.98)";
-    ctx.beginPath();
-    ctx.ellipse(x, y, 10 + pulse * 3, 22 + pulse * 5, 0.15, 0, Math.PI * 2);
-    ctx.fill();
-  }
-
-  function drawCurrentPhrase() {
-    const phrase = PHRASES.find((item) => state.time >= item.start && state.time <= item.end);
-    if (!phrase) return;
-    const p = inv(phrase.start, phrase.end, state.time);
-    const alpha = Math.sin(p * Math.PI);
-    const depth = descentDepth();
-    const xBase = 540 + Math.sin((phrase.index + 1) * 1.9) * 210;
-    const yBase = 760 + Math.cos((phrase.index + 1) * 1.47) * 310;
 
     ctx.save();
-    ctx.globalAlpha = alpha;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.shadowBlur = 18;
-    ctx.shadowColor = "rgba(172,232,255,0.48)";
-
-    let fontSize = 48;
-    let letter = 0;
-    if (phrase.style === "hero") {
-      fontSize = 72;
-      letter = 8;
-    } else if (phrase.style === "small") {
-      fontSize = 38;
-    } else if (phrase.style === "deep") {
-      fontSize = 50;
-    }
-
-    ctx.font = `${phrase.style === "hero" ? "600" : "400"} ${fontSize}px Georgia, serif`;
-    ctx.fillStyle = `rgba(235,249,255,${0.72 + (1 - depth) * 0.22})`;
-
-    if (phrase.style === "fracture") {
-      const split = 10 + Math.sin(p * Math.PI) * 22;
-      const half = Math.ceil(phrase.text.length / 2);
-      ctx.textAlign = "right";
-      ctx.fillText(phrase.text.slice(0, half), xBase - split, yBase);
-      ctx.textAlign = "left";
-      ctx.fillText(phrase.text.slice(half), xBase + split, yBase + 8);
-      ctx.strokeStyle = "rgba(139,219,255,0.68)";
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.moveTo(xBase, yBase - 90);
-      ctx.lineTo(xBase - 12, yBase - 30);
-      ctx.lineTo(xBase + 10, yBase + 30);
-      ctx.lineTo(xBase - 8, yBase + 94);
-      ctx.stroke();
-    } else if (phrase.style === "seed") {
-      ctx.fillText(phrase.text, xBase, yBase - 90);
-    } else if (phrase.style === "home") {
-      ctx.globalAlpha *= 0.82;
-      ctx.fillText(phrase.text, xBase, yBase);
-      ctx.strokeStyle = "rgba(236,249,255,0.18)";
-      ctx.strokeRect(xBase - 240, yBase - 76, 480, 152);
-    } else {
-      if (letter > 0) drawSpacedText(phrase.text, xBase, yBase, letter);
-      else ctx.fillText(phrase.text, xBase, yBase);
-    }
+    ctx.globalAlpha = smooth(p);
+    ctx.translate(0, lerp(1280, 0, p));
+    drawIceDescent(p * 0.08);
     ctx.restore();
+
+    const dark = ctx.createLinearGradient(0, 0, 0, VIEW.h);
+    dark.addColorStop(0, `rgba(2,8,18,${p * 0.25})`);
+    dark.addColorStop(1, `rgba(1,5,13,${p * 0.45})`);
+    ctx.fillStyle = dark;
+    ctx.fillRect(0, 0, VIEW.w, VIEW.h);
   }
 
-  function drawSpacedText(text, x, y, spacing) {
-    const widths = [...text].map((ch) => ctx.measureText(ch).width);
-    const total = widths.reduce((sum, width) => sum + width, 0) + spacing * (text.length - 1);
-    let cursor = x - total / 2;
-    ctx.textAlign = "left";
-    for (let i = 0; i < text.length; i++) {
-      ctx.fillText(text[i], cursor, y);
-      cursor += widths[i] + spacing;
-    }
-  }
-
-  function drawBottomApproach() {
-    const p = beat("bottomApproach");
-    fillGradient("#061a3a", "#00040b");
-
-    // the iceberg still dominates the frame
-    const undersideY = lerp(1540, 760, easeInOut(p));
-    const underside = makeUndersidePath(undersideY, 0);
-    const g = ctx.createLinearGradient(0, 0, 0, undersideY + 300);
-    g.addColorStop(0, "#0d4a89");
-    g.addColorStop(0.55, "#082b5c");
-    g.addColorStop(1, "#031326");
-    ctx.fillStyle = g;
-    ctx.fill(underside);
-
-    ctx.strokeStyle = "rgba(151,218,255,0.24)";
-    ctx.lineWidth = 8;
-    ctx.stroke(underside);
-
-    drawUnderIceTexture(undersideY);
-    drawVignette(0.5);
-  }
-
-  function makeUndersidePath(y, fracture = 0) {
+  function undersidePath() {
     const path = new Path2D();
-    path.moveTo(-40, -40);
-    path.lineTo(VIEW.w + 40, -40);
-    path.lineTo(VIEW.w + 40, y - 160);
-    for (let x = VIEW.w + 40; x >= -40; x -= 80) {
-      const jag = Math.sin(x * 0.021) * 65 + Math.sin(x * 0.051 + 1.2) * 30;
-      const collapse = fracture * (hash(x * 0.03) * 95);
-      path.lineTo(x, y + jag + collapse);
-    }
+    path.moveTo(-80, -40);
+    path.lineTo(1160, -40);
+    path.lineTo(1160, 500);
+    path.lineTo(980, 570);
+    path.lineTo(850, 520);
+    path.lineTo(720, 650);
+    path.lineTo(590, 540);
+    path.lineTo(460, 690);
+    path.lineTo(330, 540);
+    path.lineTo(180, 620);
+    path.lineTo(-80, 520);
     path.closePath();
     return path;
   }
 
-  function drawUnderIceTexture(undersideY) {
+  function drawBottom(progress, fractureProgress = 0) {
+    fillGradient("#07162b", "#00040a");
     ctx.save();
-    for (let i = 0; i < 17; i++) {
-      const x = hash(i * 4.1) * VIEW.w;
-      const y = hash(i * 7.6) * undersideY;
-      const w = 120 + hash(i + 50) * 360;
-      const h = 140 + hash(i + 90) * 280;
+    const path = undersidePath();
+    const gradient = ctx.createLinearGradient(0, 0, 0, 720);
+    gradient.addColorStop(0, "#1c5c9b");
+    gradient.addColorStop(0.5, "#0b3265");
+    gradient.addColorStop(1, "#04152e");
+    ctx.fillStyle = gradient;
+    ctx.fill(path);
+
+    ctx.save();
+    ctx.clip(path);
+    for (let i = 0; i < 18; i += 1) {
+      const y = 40 + i * 38;
+      ctx.strokeStyle = `rgba(177,224,250,${0.04 + i * 0.004})`;
+      ctx.lineWidth = 8 + (i % 4) * 3;
       ctx.beginPath();
-      ctx.moveTo(x - w * 0.5, y - h * 0.2);
-      ctx.lineTo(x + w * 0.46, y - h * 0.5);
-      ctx.lineTo(x + w * 0.52, y + h * 0.42);
-      ctx.lineTo(x - w * 0.4, y + h * 0.55);
-      ctx.closePath();
-      ctx.fillStyle = `rgba(145,214,250,${0.025 + hash(i) * 0.05})`;
+      ctx.moveTo(-80, y + Math.sin(i) * 35);
+      ctx.bezierCurveTo(250, y - 45, 710, y + 50, 1160, y - 10);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    if (fractureProgress > 0) {
+      const fp = easeOut(fractureProgress);
+      const converge = [
+        [[120, 220], [310, 330], [500, 470], [555, 610]],
+        [[970, 180], [790, 330], [650, 470], [555, 610]],
+        [[540, 60], [565, 230], [540, 400], [555, 610]],
+        [[260, 510], [390, 535], [490, 575], [555, 610]],
+      ];
+      ctx.lineJoin = "round";
+      for (const branch of converge) {
+        ctx.beginPath();
+        ctx.moveTo(branch[0][0], branch[0][1]);
+        const visible = Math.max(2, Math.floor(lerp(2, branch.length, fp)));
+        for (let i = 1; i < visible; i += 1) ctx.lineTo(branch[i][0], branch[i][1]);
+        ctx.shadowBlur = 34;
+        ctx.shadowColor = "rgba(136,226,255,0.74)";
+        ctx.strokeStyle = "rgba(212,247,255,0.9)";
+        ctx.lineWidth = 5;
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+
+    ctx.save();
+    ctx.globalAlpha = 0.4;
+    for (let i = 0; i < 36; i += 1) {
+      const x = hash(i + 820) * VIEW.w;
+      const y = 740 + ((hash(i + 870) * 1180 + state.time * (10 + hash(i + 920) * 16)) % 1180);
+      ctx.fillStyle = "rgba(193,231,250,0.24)";
+      ctx.beginPath();
+      ctx.arc(x, y, 1 + hash(i + 970) * 3, 0, Math.PI * 2);
       ctx.fill();
     }
     ctx.restore();
   }
 
-  function drawBottomFracture() {
-    const p = beat("bottomFracture");
-    fillGradient("#04142f", "#000207");
-    const undersideY = 760;
-    const underside = makeUndersidePath(undersideY, p * 0.2);
-    const g = ctx.createLinearGradient(0, 0, 0, undersideY + 180);
-    g.addColorStop(0, "#0a3b75");
-    g.addColorStop(0.65, "#061f45");
-    g.addColorStop(1, "#020b18");
-    ctx.fillStyle = g;
-    ctx.fill(underside);
-    drawUnderIceTexture(undersideY);
-
-    const cx = 560;
-    const cy = 660;
+  function drawShard(shard, progress, index) {
+    const local = clamp((progress - shard.delay) / (1 - shard.delay));
+    if (local <= 0) return;
+    const p = easeIn(local);
     ctx.save();
-    ctx.lineCap = "round";
-    ctx.shadowBlur = 30;
-    ctx.shadowColor = "rgba(114,215,255,0.8)";
-    ctx.strokeStyle = `rgba(177,236,255,${0.34 + p * 0.62})`;
-    for (let i = 0; i < 8; i++) {
-      const startX = lerp(70, 1010, i / 7);
-      const startY = 80 + hash(i + 6) * 420;
-      const midX = lerp(startX, cx, 0.6) + (hash(i * 2) - 0.5) * 90;
-      const midY = lerp(startY, cy, 0.6) + (hash(i * 3) - 0.5) * 70;
-      ctx.lineWidth = 3 + p * 3;
-      ctx.beginPath();
-      ctx.moveTo(startX, startY);
-      ctx.lineTo(midX, midY);
-      ctx.lineTo(cx + (hash(i + 20) - 0.5) * 24, cy + (hash(i + 30) - 0.5) * 20);
-      ctx.stroke();
-    }
-    const pulse = Math.sin(p * Math.PI * 5) * 0.5 + 0.5;
-    const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, 180 + pulse * 90);
-    glow.addColorStop(0, `rgba(220,249,255,${p * 0.46})`);
-    glow.addColorStop(1, "rgba(116,216,255,0)");
-    ctx.fillStyle = glow;
-    ctx.fillRect(cx - 280, cy - 280, 560, 560);
-    ctx.restore();
-    drawVignette(0.56);
-  }
+    ctx.translate(shard.cx + shard.drift * p, shard.cy + shard.fall * p * p);
+    ctx.rotate(shard.spin * p + index * 0.08);
 
-  const SHARDS = [
-    {
-      points: [[120, 690], [350, 640], [430, 805], [306, 1010], [94, 918], [42, 780]],
-      vx: -115, vy: 590, spin: -0.42, delay: 0.0,
-    },
-    {
-      points: [[390, 610], [650, 580], [738, 766], [602, 975], [430, 854]],
-      vx: 38, vy: 660, spin: 0.36, delay: 0.08,
-    },
-    {
-      points: [[700, 650], [1018, 590], [1080, 730], [964, 980], [764, 916]],
-      vx: 138, vy: 560, spin: 0.48, delay: 0.18,
-    },
-    {
-      points: [[250, 900], [455, 820], [560, 1040], [392, 1225], [202, 1110]],
-      vx: -70, vy: 760, spin: -0.3, delay: 0.28,
-    },
-  ];
-
-  function drawBottomShatter() {
-    const p = beat("bottomShatter");
-    fillGradient("#031027", "#000104");
-    const undersideY = 720;
-    const fixed = makeUndersidePath(undersideY, 0.16 + p * 0.18);
-    ctx.fillStyle = "#052248";
-    ctx.fill(fixed);
-
-    for (let i = 0; i < SHARDS.length; i++) {
-      const shard = SHARDS[i];
-      const local = clamp((p - shard.delay) / (1 - shard.delay));
-      drawJaggedShard(shard, local, i);
-    }
-
-    const dim = smooth(inv(0.55, 1, p));
-    ctx.fillStyle = `rgba(0,0,0,${dim * 0.82})`;
-    ctx.fillRect(0, 0, VIEW.w, VIEW.h);
-    drawVignette(0.7);
-  }
-
-  function drawJaggedShard(shard, p, index) {
-    const cx = shard.points.reduce((sum, point) => sum + point[0], 0) / shard.points.length;
-    const cy = shard.points.reduce((sum, point) => sum + point[1], 0) / shard.points.length;
-    const tx = shard.vx * easeIn(p);
-    const ty = shard.vy * easeIn(p);
-
-    ctx.save();
-    ctx.translate(cx + tx, cy + ty);
-    ctx.rotate(shard.spin * easeInOut(p));
-    ctx.translate(-cx, -cy);
-
-    const g = ctx.createLinearGradient(cx - 200, cy - 220, cx + 180, cy + 260);
-    g.addColorStop(0, "rgba(116,198,236,0.86)");
-    g.addColorStop(0.48, "rgba(40,104,165,0.92)");
-    g.addColorStop(1, "rgba(4,26,63,0.98)");
-    ctx.fillStyle = g;
+    const gradient = ctx.createLinearGradient(-160, -160, 180, 180);
+    gradient.addColorStop(0, "rgba(181,230,253,0.88)");
+    gradient.addColorStop(0.42, "rgba(46,117,173,0.82)");
+    gradient.addColorStop(1, "rgba(5,28,62,0.92)");
+    ctx.fillStyle = gradient;
+    ctx.strokeStyle = "rgba(222,248,255,0.46)";
+    ctx.lineWidth = 4;
     ctx.beginPath();
-    shard.points.forEach((point, i) => {
-      if (i === 0) ctx.moveTo(point[0], point[1]);
-      else ctx.lineTo(point[0], point[1]);
+    shard.vertices.forEach(([x, y], i) => {
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
     });
     ctx.closePath();
     ctx.fill();
-
-    ctx.strokeStyle = "rgba(211,244,255,0.42)";
-    ctx.lineWidth = 6;
     ctx.stroke();
 
-    // Internal fracture facets
-    ctx.strokeStyle = "rgba(203,239,255,0.18)";
-    ctx.lineWidth = 3;
-    for (let j = 0; j < 4; j++) {
-      const a = shard.points[j % shard.points.length];
-      const b = shard.points[(j + 2) % shard.points.length];
-      ctx.beginPath();
-      ctx.moveTo(cx, cy);
-      ctx.lineTo(lerp(a[0], b[0], 0.55), lerp(a[1], b[1], 0.55));
-      ctx.stroke();
-    }
-
-    // one shard carries a tiny reflection of the penguins
-    if (index === 1 && p > 0.18 && p < 0.72) {
-      ctx.globalAlpha = 0.14;
-      ctx.fillStyle = "#f4fbff";
-      ctx.beginPath();
-      ctx.ellipse(cx - 12, cy + 20, 14, 25, -0.2, 0, Math.PI * 2);
-      ctx.ellipse(cx + 14, cy + 20, 14, 25, 0.2, 0, Math.PI * 2);
-      ctx.fill();
-    }
+    ctx.globalAlpha = 0.25;
+    ctx.strokeStyle = "rgba(240,252,255,0.7)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(shard.vertices[0][0], shard.vertices[0][1]);
+    ctx.lineTo(0, 0);
+    ctx.lineTo(shard.vertices[3 % shard.vertices.length][0], shard.vertices[3 % shard.vertices.length][1]);
+    ctx.stroke();
     ctx.restore();
   }
 
-  function drawBlackout() {
-    const p = beat("blackout");
-    ctx.fillStyle = "#000";
-    ctx.fillRect(0, 0, VIEW.w, VIEW.h);
-    if (p < 0.35) {
-      ctx.fillStyle = `rgba(38,92,129,${(0.35 - p) * 0.12})`;
-      ctx.fillRect(0, 0, VIEW.w, VIEW.h);
-    }
-  }
+  function drawShatter(progress) {
+    drawBottom(1, 1);
+    const p = smooth(progress);
+    for (let i = 0; i < shards.length; i += 1) drawShard(shards[i], p, i);
 
-  function fishPosition(i, t) {
-    return {
-      x: ((hash(i * 2.7) * 1240 + t * (38 + hash(i + 9) * 55)) % 1380) - 150,
-      y: 360 + hash(i * 9.1) * 1050 + Math.sin(t * 0.65 + i) * 90,
-      s: 0.55 + hash(i + 20) * 1.1,
-    };
-  }
-
-  function drawFishSchool(reveal = 1, whaleSpace = false) {
     ctx.save();
-    ctx.globalCompositeOperation = "screen";
-    for (let i = 0; i < 18; i++) {
-      const pos = fishPosition(i, state.time);
-      const appear = clamp(reveal * 1.55 - i * 0.045);
-      if (appear <= 0) continue;
-      const x = pos.x;
-      const y = pos.y;
-      const s = pos.s;
-      const glowR = 36 * s;
-      const g = ctx.createRadialGradient(x, y, 0, x, y, glowR);
-      g.addColorStop(0, `rgba(178,255,236,${0.78 * appear})`);
-      g.addColorStop(0.24, `rgba(88,218,255,${0.35 * appear})`);
-      g.addColorStop(1, "rgba(88,218,255,0)");
-      ctx.fillStyle = g;
-      ctx.fillRect(x - glowR, y - glowR, glowR * 2, glowR * 2);
-
-      ctx.fillStyle = `rgba(215,255,245,${0.92 * appear})`;
-      ctx.beginPath();
-      ctx.ellipse(x, y, 11 * s, 6 * s, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.beginPath();
-      ctx.moveTo(x - 10 * s, y);
-      ctx.lineTo(x - 19 * s, y - 7 * s);
-      ctx.lineTo(x - 19 * s, y + 7 * s);
-      ctx.closePath();
-      ctx.fill();
-    }
+    ctx.globalAlpha = easeIn(p) * 0.75;
+    const dark = ctx.createLinearGradient(0, 450, 0, VIEW.h);
+    dark.addColorStop(0, "rgba(0,0,0,0)");
+    dark.addColorStop(0.42, "rgba(0,2,7,0.42)");
+    dark.addColorStop(1, "rgba(0,0,0,0.98)");
+    ctx.fillStyle = dark;
+    ctx.fillRect(0, 0, VIEW.w, VIEW.h);
     ctx.restore();
   }
 
-  function drawFishScene() {
-    const p = beat("fish");
-    fillGradient("#01040a", "#000104");
-    drawFishSchool(smooth(p));
-    drawWaterParticles(0.28 * p);
-    drawVignette(0.62);
-  }
-
-  function drawWaterParticles(alpha) {
+  function drawDeepParticles(alpha = 1) {
     ctx.save();
     ctx.globalAlpha = alpha;
-    ctx.fillStyle = "#c8f6ff";
-    for (let i = 0; i < 95; i++) {
-      const x = hash(i * 3.2) * VIEW.w;
-      const y = (hash(i * 4.9) * VIEW.h - state.time * (4 + hash(i) * 9)) % VIEW.h;
+    for (let i = 0; i < 70; i += 1) {
+      const x = hash(i + 1040) * VIEW.w;
+      const y = (hash(i + 1100) * VIEW.h - state.time * (3 + hash(i + 1160) * 5) + VIEW.h) % VIEW.h;
+      ctx.fillStyle = `rgba(172,222,237,${0.04 + hash(i + 1220) * 0.12})`;
       ctx.beginPath();
-      ctx.arc(x, (y + VIEW.h) % VIEW.h, 0.8 + hash(i + 8) * 2.2, 0, Math.PI * 2);
+      ctx.arc(x, y, 1 + hash(i + 1280) * 2.2, 0, Math.PI * 2);
       ctx.fill();
     }
     ctx.restore();
+  }
+
+  function drawFish(progress, includeWhale = false) {
+    fillGradient("#01050b", "#000104");
+    drawDeepParticles(0.8);
+    const p = smooth(progress);
+    ctx.save();
+    ctx.globalCompositeOperation = "screen";
+    for (let i = 0; i < fish.length; i += 1) {
+      const f = fish[i];
+      const local = clamp((p * 1.4 - i * 0.045));
+      const x = lerp(-120, VIEW.w + 140, (state.time * 0.025 * f.speed + f.phase) % 1);
+      const y = 360 + f.lane * 1050 + Math.sin(state.time * 0.5 + f.phase) * 80;
+      const glowR = 42 * f.scale;
+      const glow = ctx.createRadialGradient(x, y, 0, x, y, glowR);
+      glow.addColorStop(0, `rgba(146,255,235,${0.68 * local})`);
+      glow.addColorStop(0.28, `rgba(87,219,255,${0.27 * local})`);
+      glow.addColorStop(1, "rgba(75,211,255,0)");
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(x, y, glowR, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.globalAlpha = local;
+      ctx.fillStyle = "rgba(202,255,247,0.94)";
+      ctx.beginPath();
+      ctx.ellipse(x, y, 12 * f.scale, 6 * f.scale, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(x - 10 * f.scale, y);
+      ctx.lineTo(x - 20 * f.scale, y - 8 * f.scale);
+      ctx.lineTo(x - 20 * f.scale, y + 8 * f.scale);
+      ctx.closePath();
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+    ctx.restore();
+    if (includeWhale) drawWhaleScene(0, 0.24 + p * 0.5);
   }
 
   function whalePath() {
     const p = new Path2D();
-    p.moveTo(-540, 80); // tail connection
-    p.bezierCurveTo(-410, -50, -210, -150, 110, -160);
-    p.bezierCurveTo(390, -170, 630, -70, 760, 70);
-    p.bezierCurveTo(870, 190, 800, 330, 610, 390);
-    p.bezierCurveTo(330, 470, 10, 430, -250, 330);
-    p.bezierCurveTo(-430, 260, -520, 175, -540, 80);
+    p.moveTo(-420, -30);
+    p.bezierCurveTo(-300, -155, 90, -190, 335, -82);
+    p.bezierCurveTo(430, -40, 455, 20, 405, 70);
+    p.bezierCurveTo(300, 175, -95, 175, -360, 72);
+    p.bezierCurveTo(-430, 42, -455, 2, -420, -30);
     p.closePath();
     return p;
   }
 
-  function drawWhale(camera = {}) {
-    const scale = camera.scale ?? 1;
-    const panX = camera.panX ?? 0;
-    const panY = camera.panY ?? 0;
-    const reveal = camera.reveal ?? 1;
-    const eyeGlow = camera.eyeGlow ?? 0;
-
+  function drawWhaleLocal(reveal = 1) {
     ctx.save();
-    ctx.translate(VIEW.w * 0.45 + panX, VIEW.h * 0.58 + panY);
-    ctx.scale(scale, scale);
-
-    // tail flukes
-    ctx.fillStyle = `rgba(4,13,24,${0.96 * reveal})`;
-    ctx.beginPath();
-    ctx.moveTo(-520, 75);
-    ctx.bezierCurveTo(-650, -20, -760, -120, -840, -40);
-    ctx.bezierCurveTo(-760, 20, -690, 65, -610, 100);
-    ctx.closePath();
-    ctx.fill();
-    ctx.beginPath();
-    ctx.moveTo(-520, 90);
-    ctx.bezierCurveTo(-665, 120, -745, 220, -835, 160);
-    ctx.bezierCurveTo(-725, 85, -635, 60, -545, 58);
-    ctx.closePath();
-    ctx.fill();
-
-    const body = ctx.createLinearGradient(-460, -180, 650, 400);
-    body.addColorStop(0, `rgba(9,27,43,${0.98 * reveal})`);
-    body.addColorStop(0.48, `rgba(18,42,59,${0.98 * reveal})`);
-    body.addColorStop(1, `rgba(3,11,20,${0.99 * reveal})`);
+    const body = ctx.createLinearGradient(-450, -170, 440, 170);
+    body.addColorStop(0, "rgba(1,9,18,0.98)");
+    body.addColorStop(0.45, "rgba(8,27,41,0.98)");
+    body.addColorStop(0.78, "rgba(18,48,61,0.98)");
+    body.addColorStop(1, "rgba(6,18,28,0.98)");
+    ctx.globalAlpha = reveal;
     ctx.fillStyle = body;
-    const path = whalePath();
-    ctx.fill(path);
+    ctx.fill(whalePath());
 
-    // gentle dorsal / fin and underside shape
-    ctx.fillStyle = `rgba(2,9,16,${0.98 * reveal})`;
+    ctx.fillStyle = "rgba(4,14,22,0.98)";
     ctx.beginPath();
-    ctx.moveTo(-40, 340);
-    ctx.bezierCurveTo(50, 510, 230, 560, 330, 420);
-    ctx.bezierCurveTo(185, 438, 70, 404, -40, 340);
+    ctx.moveTo(-410, -10);
+    ctx.bezierCurveTo(-515, -120, -585, -105, -630, -28);
+    ctx.bezierCurveTo(-570, -10, -520, 16, -430, 20);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(-420, 24);
+    ctx.bezierCurveTo(-525, 130, -590, 120, -635, 44);
+    ctx.bezierCurveTo(-560, 18, -510, 0, -430, 2);
+    ctx.closePath();
     ctx.fill();
 
-    // skin texture and subtle baleen lines
-    ctx.save();
-    ctx.clip(path);
-    for (let i = 0; i < 55; i++) {
-      const x = -470 + hash(i * 2.1) * 1130;
-      const y = -120 + hash(i * 4.4) * 510;
-      const r = 2 + hash(i + 9) * 6;
-      ctx.globalAlpha = 0.035 + hash(i) * 0.045;
-      ctx.fillStyle = "#a5c0cb";
+    ctx.fillStyle = "rgba(5,18,27,0.96)";
+    ctx.beginPath();
+    ctx.moveTo(110, 95);
+    ctx.bezierCurveTo(5, 250, -80, 260, -125, 140);
+    ctx.bezierCurveTo(-20, 142, 55, 115, 110, 95);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.strokeStyle = "rgba(105,170,189,0.13)";
+    ctx.lineWidth = 4;
+    for (let i = 0; i < 9; i += 1) {
       ctx.beginPath();
-      ctx.arc(x, y, r, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.globalAlpha = 0.1;
-    ctx.strokeStyle = "#b9d3dc";
-    ctx.lineWidth = 2;
-    for (let i = 0; i < 8; i++) {
-      ctx.beginPath();
-      ctx.moveTo(420 + i * 32, 185);
-      ctx.bezierCurveTo(470 + i * 26, 230, 500 + i * 20, 295, 520 + i * 16, 355);
+      ctx.moveTo(250 + i * 10, 55);
+      ctx.quadraticCurveTo(285 + i * 10, 92, 300 + i * 8, 120);
       ctx.stroke();
     }
-    ctx.restore();
 
-    // mouth line
-    ctx.strokeStyle = `rgba(125,160,176,${0.24 * reveal})`;
-    ctx.lineWidth = 5;
+    ctx.fillStyle = "rgba(110,164,183,0.22)";
     ctx.beginPath();
-    ctx.moveTo(370, 200);
-    ctx.bezierCurveTo(520, 265, 675, 260, 750, 155);
-    ctx.stroke();
+    ctx.ellipse(297, -38, 26, 15, -0.08, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "rgba(0,2,5,0.98)";
+    ctx.beginPath();
+    ctx.ellipse(302, -39, 8, 9, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "rgba(221,248,255,0.72)";
+    ctx.beginPath();
+    ctx.arc(306, -43, 2.2, 0, Math.PI * 2);
+    ctx.fill();
 
-    // eye
-    const eyeX = 510;
-    const eyeY = 60;
-    ctx.fillStyle = `rgba(118,155,174,${0.24 + eyeGlow * 0.18})`;
-    ctx.beginPath();
-    ctx.ellipse(eyeX, eyeY, 27, 16, -0.05, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = "#010308";
-    ctx.beginPath();
-    ctx.arc(eyeX, eyeY, 9.5, 0, Math.PI * 2);
-    ctx.fill();
-    if (eyeGlow > 0) {
-      const g = ctx.createRadialGradient(eyeX + 8, eyeY - 7, 0, eyeX + 8, eyeY - 7, 52);
-      g.addColorStop(0, `rgba(220,251,255,${0.8 * eyeGlow})`);
-      g.addColorStop(1, "rgba(130,224,255,0)");
-      ctx.fillStyle = g;
-      ctx.fillRect(eyeX - 50, eyeY - 60, 120, 120);
-    }
     ctx.restore();
   }
 
-  function drawWhaleReveal() {
-    const p = beat("whaleReveal");
-    fillGradient("#01040a", "#000104");
-    drawWaterParticles(0.14 + p * 0.16);
-    drawWhale({ scale: 0.86, panX: 95, panY: 130, reveal: smooth(p) * 0.95, eyeGlow: clamp((p - 0.65) / 0.35) });
-    drawFishSchool(1, true);
-    drawVignette(0.66);
+  function whalePose(progress) {
+    const p = smooth(progress);
+    return {
+      x: lerp(420, 180, p),
+      y: lerp(1050, 1010, p),
+      scale: lerp(0.9, 1.34, p),
+      rotation: lerp(-0.08, -0.025, p),
+    };
   }
 
-  function drawWhaleApproach() {
-    const p = beat("whaleApproach");
-    fillGradient("#01040a", "#000103");
-    drawWaterParticles(0.18);
-
-    // camera glides along the body, then settles near the eye
-    const scale = lerp(0.86, 1.62, easeInOut(p));
-    const panX = lerp(95, -280, easeInOut(p));
-    const panY = lerp(130, 120, easeInOut(p));
-    drawWhale({ scale, panX, panY, reveal: 1, eyeGlow: smooth(inv(0.4, 1, p)) });
-    drawFishSchool(1 - p * 0.45);
-
-    const targetGlow = ctx.createRadialGradient(742, 1060, 0, 742, 1060, 300);
-    targetGlow.addColorStop(0, `rgba(100,218,255,${p * 0.08})`);
-    targetGlow.addColorStop(1, "rgba(100,218,255,0)");
-    ctx.fillStyle = targetGlow;
-    ctx.fillRect(400, 700, 680, 700);
-    drawVignette(0.72);
-  }
-
-  function drawEyeTransition() {
-    const p = beat("eye");
-    fillGradient("#000207", "#000000");
-    const scale = lerp(1.62, 5.5, easeInOut(p));
-    const panX = lerp(-280, -2751, easeInOut(p));
-    const panY = lerp(120, -483, easeInOut(p));
-    drawWhale({ scale, panX, panY, reveal: 1, eyeGlow: 1 });
-
-    // camera enters the pupil only at the end, instead of the pupil magically expanding by itself
-    const darkness = smooth(inv(0.62, 1, p));
-    ctx.fillStyle = `rgba(0,0,0,${darkness})`;
-    ctx.fillRect(0, 0, VIEW.w, VIEW.h);
-
-    if (p < 0.78) {
-      const sx = lerp(770, 546, p / 0.78);
-      const sy = lerp(1015, 950, p / 0.78);
-      ctx.fillStyle = `rgba(239,251,255,${0.75 * (1 - p / 0.78)})`;
-      ctx.beginPath();
-      ctx.arc(sx, sy, 3.5, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
-
-  const STAR_FIELD = Array.from({ length: 180 }, (_, i) => ({
-    x: hash(i * 2.13) * VIEW.w,
-    y: hash(i * 7.27) * VIEW.h,
-    r: 0.7 + hash(i + 30) * 2.3,
-    twinkle: hash(i + 90) * Math.PI * 2,
-  }));
-
-  const ORION = [
-    { name: "Betelgeuse", x: -150, y: -210, r: 6.5 },
-    { name: "Bellatrix", x: 120, y: -180, r: 5.2 },
-    { name: "Alnitak", x: -62, y: 2, r: 4.6 },
-    { name: "Alnilam", x: 0, y: 10, r: 4.9 },
-    { name: "Mintaka", x: 68, y: 18, r: 4.3 },
-    { name: "Saiph", x: -115, y: 245, r: 4.8 },
-    { name: "Rigel", x: 150, y: 260, r: 6.3 },
-    { name: "Sword1", x: 8, y: 86, r: 2.8 },
-    { name: "Sword2", x: 14, y: 128, r: 2.6 },
-    { name: "Sword3", x: 20, y: 170, r: 2.2 },
-  ];
-
-  function drawStarField(alpha = 1, rotation = 0, drift = 0) {
+  function drawWhaleScene(progress, reveal = 1) {
+    fillGradient("#01050a", "#000104");
+    drawDeepParticles(0.9);
+    const pose = whalePose(progress);
     ctx.save();
-    ctx.translate(VIEW.w * 0.5, VIEW.h * 0.5);
-    ctx.rotate(rotation);
-    ctx.translate(-VIEW.w * 0.5 + drift, -VIEW.h * 0.5);
-    for (let i = 0; i < STAR_FIELD.length; i++) {
-      const star = STAR_FIELD[i];
-      const twinkle = 0.62 + Math.sin(state.time * 1.7 + star.twinkle) * 0.28;
-      ctx.globalAlpha = alpha * twinkle;
-      ctx.fillStyle = "#f0f8ff";
+    ctx.translate(pose.x, pose.y);
+    ctx.rotate(pose.rotation);
+    ctx.scale(pose.scale, pose.scale);
+    drawWhaleLocal(reveal);
+    ctx.restore();
+
+    ctx.save();
+    ctx.globalCompositeOperation = "screen";
+    for (let i = 0; i < 9; i += 1) {
+      const x = 180 + ((state.time * 32 + i * 155) % 1100);
+      const y = 520 + Math.sin(state.time * 0.55 + i) * 330 + i * 42;
+      const glow = ctx.createRadialGradient(x, y, 0, x, y, 38);
+      glow.addColorStop(0, "rgba(134,255,234,0.72)");
+      glow.addColorStop(1, "rgba(70,220,255,0)");
+      ctx.fillStyle = glow;
       ctx.beginPath();
-      ctx.arc(star.x, star.y, star.r, 0, Math.PI * 2);
+      ctx.arc(x, y, 38, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "rgba(210,255,247,0.9)";
+      ctx.beginPath();
+      ctx.ellipse(x, y, 10, 5, 0, 0, Math.PI * 2);
       ctx.fill();
     }
     ctx.restore();
   }
 
-  function drawOrion(alpha = 1, x = 520, y = 850, scale = 1) {
+  function drawEyeApproach(progress) {
+    fillGradient("#01050a", "#000104");
+    drawDeepParticles(0.45 * (1 - progress));
+    const p = easeInOut(progress);
+    const eyeLocal = { x: 302, y: -39 };
+    const scale = lerp(1.34, 9.5, easeIn(p));
+    const rotation = lerp(-0.025, 0, p);
+    const x = VIEW.w * 0.5 - eyeLocal.x * scale;
+    const y = VIEW.h * 0.5 - eyeLocal.y * scale;
     ctx.save();
     ctx.translate(x, y);
+    ctx.rotate(rotation);
     ctx.scale(scale, scale);
-    ctx.globalCompositeOperation = "screen";
-
-    const byName = Object.fromEntries(ORION.map((s) => [s.name, s]));
-    const lines = [
-      ["Betelgeuse", "Bellatrix"],
-      ["Betelgeuse", "Alnitak"],
-      ["Bellatrix", "Mintaka"],
-      ["Alnitak", "Alnilam"],
-      ["Alnilam", "Mintaka"],
-      ["Alnitak", "Saiph"],
-      ["Mintaka", "Rigel"],
-      ["Saiph", "Rigel"],
-      ["Alnilam", "Sword1"],
-      ["Sword1", "Sword2"],
-      ["Sword2", "Sword3"],
-    ];
-    ctx.strokeStyle = `rgba(163,216,255,${alpha * 0.18})`;
-    ctx.lineWidth = 1.5;
-    for (const [a, b] of lines) {
-      ctx.beginPath();
-      ctx.moveTo(byName[a].x, byName[a].y);
-      ctx.lineTo(byName[b].x, byName[b].y);
-      ctx.stroke();
-    }
-
-    for (const star of ORION) {
-      const g = ctx.createRadialGradient(star.x, star.y, 0, star.x, star.y, star.r * 6);
-      g.addColorStop(0, `rgba(255,255,255,${alpha})`);
-      g.addColorStop(0.25, `rgba(190,227,255,${alpha * 0.5})`);
-      g.addColorStop(1, "rgba(130,210,255,0)");
-      ctx.fillStyle = g;
-      ctx.beginPath();
-      ctx.arc(star.x, star.y, star.r * 6, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = `rgba(255,255,255,${alpha})`;
-      ctx.beginPath();
-      ctx.arc(star.x, star.y, star.r, 0, Math.PI * 2);
-      ctx.fill();
-    }
+    drawWhaleLocal(1);
     ctx.restore();
-  }
 
-  function drawCosmos() {
-    const p = beat("cosmos");
-    ctx.fillStyle = "#000103";
+    const black = smooth(inv(0.72, 1, p));
+    ctx.fillStyle = `rgba(0,0,0,${black})`;
     ctx.fillRect(0, 0, VIEW.w, VIEW.h);
-    drawStarField(smooth(p), -0.03 * p, -18 * p);
+  }
 
-    // Orion's belt appears first, then the rest of Orion.
-    const beltAlpha = smooth(inv(0.04, 0.38, p));
-    const fullAlpha = smooth(inv(0.28, 0.78, p));
+  function drawStars(progress) {
+    fillGradient("#000104", "#000000");
+    const p = smooth(progress);
     ctx.save();
-    ctx.translate(540, 920);
-    ctx.globalCompositeOperation = "screen";
-    for (const name of ["Alnitak", "Alnilam", "Mintaka"]) {
-      const star = ORION.find((item) => item.name === name);
-      const g = ctx.createRadialGradient(star.x, star.y, 0, star.x, star.y, 36);
-      g.addColorStop(0, `rgba(255,255,255,${beltAlpha})`);
-      g.addColorStop(1, "rgba(149,218,255,0)");
-      ctx.fillStyle = g;
+    ctx.translate(VIEW.w / 2, VIEW.h / 2);
+    ctx.rotate(state.time * 0.006);
+    for (const star of stars) {
+      const appear = clamp((p * 1.45 - star.r / 1500));
+      const twinkle = 0.72 + Math.sin(state.time * star.twinkle + star.a * 4) * 0.28;
+      ctx.globalAlpha = appear * star.alpha * twinkle;
+      ctx.fillStyle = "#eef8ff";
       ctx.beginPath();
-      ctx.arc(star.x, star.y, 36, 0, Math.PI * 2);
+      ctx.arc(Math.cos(star.a) * star.r, Math.sin(star.a) * star.r, star.size, 0, Math.PI * 2);
       ctx.fill();
     }
     ctx.restore();
-    drawOrion(fullAlpha, 540, 920, 1.12);
-    drawVignette(0.46);
+    drawShootingStar(inv(0.22, 0.58, p), 300);
+    if (p > 0.48) drawEarth(clamp((p - 0.48) / 0.52), 80 + (p - 0.48) * 80);
   }
 
-  function drawEarth(radius, rotation, alpha = 1) {
-    const cx = VIEW.w * 0.5;
-    const cy = VIEW.h * 0.5;
+  function irregularBlob(cx, cy, radius, seed, points = 10) {
+    ctx.beginPath();
+    for (let i = 0; i < points; i += 1) {
+      const a = (i / points) * Math.PI * 2;
+      const r = radius * (0.66 + hash(seed * 20 + i) * 0.46);
+      const x = cx + Math.cos(a) * r;
+      const y = cy + Math.sin(a) * r * 0.7;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+  }
+
+  function drawEarth(rotationProgress, radius) {
+    const cx = VIEW.w / 2;
+    const cy = VIEW.h / 2;
     ctx.save();
-    ctx.globalAlpha = alpha;
-
-    const atmosphere = ctx.createRadialGradient(cx - radius * 0.25, cy - radius * 0.3, radius * 0.15, cx, cy, radius * 1.18);
-    atmosphere.addColorStop(0, "rgba(255,255,255,0.12)");
-    atmosphere.addColorStop(0.72, "rgba(72,161,255,0.04)");
-    atmosphere.addColorStop(0.86, "rgba(65,173,255,0.42)");
-    atmosphere.addColorStop(1, "rgba(65,173,255,0)");
-    ctx.fillStyle = atmosphere;
+    ctx.globalCompositeOperation = "screen";
+    const glow = ctx.createRadialGradient(cx, cy, radius * 0.78, cx, cy, radius * 1.38);
+    glow.addColorStop(0, "rgba(74,171,255,0)");
+    glow.addColorStop(0.72, "rgba(75,173,255,0.12)");
+    glow.addColorStop(1, "rgba(75,173,255,0)");
+    ctx.fillStyle = glow;
     ctx.beginPath();
-    ctx.arc(cx, cy, radius * 1.2, 0, Math.PI * 2);
+    ctx.arc(cx, cy, radius * 1.42, 0, Math.PI * 2);
     ctx.fill();
-
-    const globe = ctx.createRadialGradient(cx - radius * 0.35, cy - radius * 0.35, radius * 0.08, cx, cy, radius);
-    globe.addColorStop(0, "#66c8ff");
-    globe.addColorStop(0.48, "#146fb9");
-    globe.addColorStop(1, "#061b3f");
-    ctx.fillStyle = globe;
-    ctx.beginPath();
-    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.restore();
 
     ctx.save();
     ctx.beginPath();
     ctx.arc(cx, cy, radius, 0, Math.PI * 2);
     ctx.clip();
-    ctx.translate(cx, cy);
-    ctx.rotate(rotation);
+    const ocean = ctx.createRadialGradient(cx - radius * 0.4, cy - radius * 0.45, radius * 0.1, cx, cy, radius * 1.2);
+    ocean.addColorStop(0, "#63bbef");
+    ocean.addColorStop(0.48, "#1879bd");
+    ocean.addColorStop(1, "#05284e");
+    ctx.fillStyle = ocean;
+    ctx.fillRect(cx - radius, cy - radius, radius * 2, radius * 2);
 
-    // Stylized continents.
-    ctx.fillStyle = "#4f9d63";
-    drawContinent(-radius * 0.2, -radius * 0.17, radius, 0.9);
-    drawContinent(radius * 0.28, radius * 0.18, radius, -0.5);
-    drawContinent(-radius * 0.55, radius * 0.34, radius * 0.72, 0.35);
+    const shift = Math.sin(rotationProgress * Math.PI * 2) * radius * 0.55;
+    ctx.fillStyle = "rgba(77,138,83,0.94)";
+    irregularBlob(cx - radius * 0.28 + shift, cy - radius * 0.12, radius * 0.34, 10, 11);
+    ctx.fill();
+    irregularBlob(cx + radius * 0.4 + shift * 0.5, cy + radius * 0.18, radius * 0.28, 12, 9);
+    ctx.fill();
+    irregularBlob(cx - radius * 0.5 + shift * 0.7, cy + radius * 0.44, radius * 0.18, 14, 8);
+    ctx.fill();
 
-    // cloud bands
-    ctx.strokeStyle = "rgba(244,252,255,0.52)";
-    ctx.lineWidth = Math.max(2, radius * 0.025);
-    for (let i = -2; i <= 2; i++) {
-      const y = i * radius * 0.24;
+    ctx.fillStyle = "rgba(241,249,255,0.78)";
+    for (let i = 0; i < 7; i += 1) {
+      const x = cx - radius * 0.8 + ((i * 0.31 + rotationProgress * 0.16) % 1.6) * radius;
+      const y = cy - radius * 0.62 + i * radius * 0.2;
       ctx.beginPath();
-      ctx.bezierCurveTo(-radius, y - 25, -radius * 0.2, y + 42, radius, y - 10);
-      ctx.stroke();
+      ctx.ellipse(x, y, radius * (0.24 + (i % 3) * 0.04), radius * 0.07, 0.22, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    const shade = ctx.createLinearGradient(cx - radius, cy - radius, cx + radius, cy + radius);
+    shade.addColorStop(0, "rgba(255,255,255,0.24)");
+    shade.addColorStop(0.52, "rgba(0,0,0,0)");
+    shade.addColorStop(1, "rgba(0,0,0,0.52)");
+    ctx.fillStyle = shade;
+    ctx.fillRect(cx - radius, cy - radius, radius * 2, radius * 2);
+    ctx.restore();
+
+    ctx.strokeStyle = "rgba(170,224,255,0.72)";
+    ctx.lineWidth = Math.max(2, radius * 0.022);
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  function drawEarthApproach(progress) {
+    fillGradient("#000104", "#000000");
+    const p = easeInOut(progress);
+    ctx.save();
+    ctx.translate(VIEW.w / 2, VIEW.h / 2);
+    ctx.rotate(state.time * 0.004 * (1 - p));
+    for (const star of stars) {
+      ctx.globalAlpha = (1 - p * 0.78) * star.alpha;
+      ctx.fillStyle = "#eef8ff";
+      ctx.beginPath();
+      ctx.arc(Math.cos(star.a) * star.r, Math.sin(star.a) * star.r, star.size, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+    drawEarth(p * 0.92, lerp(110, 980, easeIn(p)));
+  }
+
+  function drawCloudDive(progress) {
+    const p = easeInOut(progress);
+    fillGradient("#163e69", "#78b7d4");
+    const earthRadius = lerp(980, 1700, clamp(p * 1.15));
+    drawEarth(0.92 + p * 0.22, earthRadius);
+
+    ctx.save();
+    const cloudP = smooth(inv(0.18, 0.88, p));
+    for (let i = 0; i < 22; i += 1) {
+      const phase = hash(i + 1800);
+      const x = lerp(-240, 1320, (phase + p * (0.28 + hash(i + 1840) * 0.28)) % 1.35);
+      const y = 120 + hash(i + 1880) * 1650;
+      const scale = lerp(0.5, 2.6, cloudP) * (0.65 + hash(i + 1920));
+      const alpha = cloudP * (0.22 + hash(i + 1960) * 0.42);
+      ctx.fillStyle = `rgba(248,252,255,${alpha})`;
+      ctx.beginPath();
+      ctx.ellipse(x, y, 170 * scale, 70 * scale, hash(i + 2000) * 0.5 - 0.25, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(x + 110 * scale, y + 16 * scale, 130 * scale, 60 * scale, 0.1, 0, Math.PI * 2);
+      ctx.fill();
     }
     ctx.restore();
 
-    // night-side shading
-    const shadow = ctx.createLinearGradient(cx - radius, cy, cx + radius, cy);
-    shadow.addColorStop(0.2, "rgba(0,0,0,0)");
-    shadow.addColorStop(0.72, "rgba(0,0,0,0.12)");
-    shadow.addColorStop(1, "rgba(0,0,0,0.7)");
-    ctx.fillStyle = shadow;
-    ctx.beginPath();
-    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
+    const white = easeIn(inv(0.72, 1, p));
+    ctx.fillStyle = `rgba(255,255,255,${white})`;
+    ctx.fillRect(0, 0, VIEW.w, VIEW.h);
   }
 
-  function drawContinent(x, y, r, rotation) {
+  function drawFinalReturn(progress) {
+    const p = smooth(progress);
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, VIEW.w, VIEW.h);
     ctx.save();
-    ctx.translate(x, y);
-    ctx.rotate(rotation);
-    ctx.beginPath();
-    ctx.moveTo(-0.34 * r, -0.1 * r);
-    ctx.bezierCurveTo(-0.16 * r, -0.28 * r, 0.08 * r, -0.24 * r, 0.23 * r, -0.07 * r);
-    ctx.bezierCurveTo(0.36 * r, 0.06 * r, 0.21 * r, 0.25 * r, 0.04 * r, 0.22 * r);
-    ctx.bezierCurveTo(-0.08 * r, 0.32 * r, -0.25 * r, 0.19 * r, -0.34 * r, -0.1 * r);
-    ctx.fill();
+    ctx.globalAlpha = p;
+    drawSurfaceScene(1, true);
+    drawShootingStar(inv(0.24, 0.48, p), 270);
     ctx.restore();
-  }
 
-  function drawEarthScene() {
-    const p = beat("earth");
-    ctx.fillStyle = "#000103";
-    ctx.fillRect(0, 0, VIEW.w, VIEW.h);
-    const rotation = lerp(-0.08, 0.22, easeInOut(p));
-    drawStarField(1, rotation * 0.32, -40 * p);
-    drawOrion(1 - p * 0.42, 350, 640, 0.72);
-    const radius = lerp(28, 235, easeOut(p));
-    drawEarth(radius, rotation, smooth(p));
-    drawVignette(0.38);
-  }
-
-  function drawEarthDive() {
-    const p = beat("earthDive");
-    ctx.fillStyle = "#000103";
-    ctx.fillRect(0, 0, VIEW.w, VIEW.h);
-    drawStarField(1 - p * 0.8, p * 0.16, -60 * p);
-    const radius = lerp(235, 1450, easeIn(p));
-    drawEarth(radius, lerp(0.22, 0.48, p), 1);
-
-    // Atmosphere turns into white snow light.
-    const white = smooth(inv(0.58, 1, p));
-    ctx.fillStyle = `rgba(235,248,255,${white})`;
-    ctx.fillRect(0, 0, VIEW.w, VIEW.h);
-  }
-
-  function drawReturnScene(final = false) {
-    const p = final ? 1 : beat("return");
-    fillGradient("#091729", "#9cc7dc");
-    drawAurora(0.12 + p * 0.05);
-    drawSnow(105, 0.55, 0.76);
-    drawSnowField(1220);
-
-    const settle = easeOut(p);
-    const leftX = lerp(430, 486, settle);
-    const rightX = lerp(650, 594, settle);
-    const y = 1190;
-    drawPenguin(leftX, y, 1.13, 1, 0.06, settle);
-    drawPenguin(rightX, y, 1.13, -1, -0.06, settle);
-
-    // shared soft glow, no crack now
-    const g = ctx.createRadialGradient(540, 1095, 0, 540, 1095, 250);
-    g.addColorStop(0, `rgba(255,255,255,${0.09 + settle * 0.08})`);
-    g.addColorStop(1, "rgba(255,255,255,0)");
-    ctx.fillStyle = g;
-    ctx.fillRect(260, 820, 560, 560);
-
-    drawVignette(0.28);
-  }
-
-  function drawFinal() {
-    const p = beat("final");
-    drawReturnScene(true);
-    const alpha = smooth(inv(0.08, 0.55, p)) * (1 - smooth(inv(0.82, 1, p)) * 0.12);
-    ctx.save();
-    ctx.globalAlpha = alpha;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillStyle = "rgba(249,253,255,0.96)";
-    ctx.shadowBlur = 32;
-    ctx.shadowColor = "rgba(157,222,255,0.72)";
-    ctx.font = "500 88px Georgia, serif";
-    drawSpacedText("forever", 540, 730, 12);
-    ctx.restore();
+    const textP = smooth(inv(0.62, 0.9, p));
+    if (textP > 0) {
+      ctx.save();
+      ctx.globalAlpha = textP;
+      ctx.textAlign = "center";
+      ctx.fillStyle = "rgba(245,250,255,0.94)";
+      ctx.shadowBlur = 24;
+      ctx.shadowColor = "rgba(102,207,255,0.42)";
+      ctx.font = "500 82px Georgia, 'Times New Roman', serif";
+      ctx.fillText("forever", VIEW.w / 2, 1640);
+      ctx.restore();
+    }
   }
 
   function render() {
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = "#02050a";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
     beginVirtual();
-    ctx.clearRect(0, 0, VIEW.w, VIEW.h);
 
-    if (active("surface")) drawSurfaceScene();
-    else if (active("kissCrack")) drawCrackTransition();
-    else if (active("descent")) drawIceFace();
-    else if (active("bottomApproach")) drawBottomApproach();
-    else if (active("bottomFracture")) drawBottomFracture();
-    else if (active("bottomShatter")) drawBottomShatter();
-    else if (active("blackout")) drawBlackout();
-    else if (active("fish")) drawFishScene();
-    else if (active("whaleReveal")) drawWhaleReveal();
-    else if (active("whaleApproach")) drawWhaleApproach();
-    else if (active("eye")) drawEyeTransition();
-    else if (active("cosmos")) drawCosmos();
-    else if (active("earth")) drawEarthScene();
-    else if (active("earthDive")) drawEarthDive();
-    else if (active("return")) drawReturnScene(false);
-    else drawFinal();
+    if (active("surface")) {
+      drawSurfaceScene(beat("surface"));
+    } else if (active("kiss")) {
+      drawSurfaceScene(1);
+      drawOpeningCrack(beat("kiss"));
+      const glow = Math.sin(beat("kiss") * Math.PI);
+      ctx.fillStyle = `rgba(225,247,255,${glow * 0.06})`;
+      ctx.fillRect(0, 0, VIEW.w, VIEW.h);
+    } else if (active("entry")) {
+      drawEntry(beat("entry"));
+    } else if (active("descent")) {
+      drawIceDescent(beat("descent"));
+    } else if (active("bottom")) {
+      drawBottom(beat("bottom"), 0);
+    } else if (active("fracture")) {
+      const p = beat("fracture");
+      if (p < 0.47) drawBottom(1, p / 0.47);
+      else drawShatter((p - 0.47) / 0.53);
+    } else if (active("blackout")) {
+      ctx.fillStyle = "black";
+      ctx.fillRect(0, 0, VIEW.w, VIEW.h);
+      const p = beat("blackout");
+      if (p < 0.35) {
+        ctx.globalAlpha = 1 - p / 0.35;
+        drawDeepParticles(0.2);
+        ctx.globalAlpha = 1;
+      }
+    } else if (active("fish")) {
+      drawFish(beat("fish"), true);
+    } else if (active("whale")) {
+      drawWhaleScene(beat("whale"), 1);
+    } else if (active("eye")) {
+      drawEyeApproach(beat("eye"));
+    } else if (active("space")) {
+      drawStars(beat("space"));
+    } else if (active("earth")) {
+      drawEarthApproach(beat("earth"));
+    } else if (active("atmosphere")) {
+      drawCloudDive(beat("atmosphere"));
+    } else if (active("returnSnow")) {
+      drawFinalReturn(beat("returnSnow"));
+    } else {
+      drawFinalReturn(1);
+    }
   }
 
   startButton.addEventListener("click", () => {
@@ -1550,18 +1179,16 @@
 
   window.addEventListener("resize", resize);
 
-  const params = new URLSearchParams(location.search);
-  const previewTime = Number(params.get("time"));
-  if (Number.isFinite(previewTime)) {
-    state.time = clamp(previewTime, 0, TOTAL);
-    intro.classList.add("is-hidden");
-  }
-  if (params.get("autoplay") === "1") {
-    intro.classList.add("is-hidden");
-    requestAnimationFrame(play);
-  }
+  const params = new URLSearchParams(window.location.search);
+  const requestedTime = Number(params.get("time"));
+  if (Number.isFinite(requestedTime)) state.time = clamp(requestedTime, 0, TOTAL);
 
   resize();
   updateUI();
   render();
+
+  if (params.get("autoplay") === "1") {
+    intro.classList.add("is-hidden");
+    play();
+  }
 })();
