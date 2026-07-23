@@ -1,0 +1,713 @@
+import { Application, Container, Graphics, Sprite, Text, TextStyle, Texture } from 'pixi.js';
+import { gsap } from 'gsap';
+import { DESIGN, STORY } from './config';
+import './styles.css';
+
+type MovingBubble = {
+  view: Graphics;
+  speed: number;
+  drift: number;
+  phase: number;
+};
+
+type Star = {
+  view: Graphics;
+  baseAlpha: number;
+  phase: number;
+  speed: number;
+};
+
+type GlowCreature = {
+  view: Container;
+  baseX: number;
+  baseY: number;
+  phase: number;
+  speed: number;
+};
+
+type PlaybackMode = 'idle' | 'audio' | 'silent';
+
+const shell = requiredElement<HTMLDivElement>('#canvas-shell');
+const startScreen = requiredElement<HTMLElement>('#start-screen');
+const startButton = requiredElement<HTMLButtonElement>('#start-button');
+const audioNote = requiredElement<HTMLElement>('#audio-note');
+const controls = requiredElement<HTMLElement>('#controls');
+const pauseButton = requiredElement<HTMLButtonElement>('#pause-button');
+const restartButton = requiredElement<HTMLButtonElement>('#restart-button');
+const demoBadge = requiredElement<HTMLElement>('#demo-badge');
+const loading = requiredElement<HTMLElement>('#loading');
+
+const app = new Application();
+await app.init({
+  background: '#020611',
+  resizeTo: window,
+  antialias: true,
+  autoDensity: true,
+  resolution: Math.min(window.devicePixelRatio || 1, 2),
+  powerPreference: 'high-performance'
+});
+
+app.canvas.setAttribute('aria-hidden', 'true');
+shell.appendChild(app.canvas);
+
+const root = new Container();
+app.stage.addChild(root);
+
+const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const bubbles: MovingBubble[] = [];
+const stars: Star[] = [];
+const creatures: GlowCreature[] = [];
+
+const surfaceScene = new Container();
+const underIceScene = new Container();
+const deepScene = new Container();
+const cosmicScene = new Container();
+const textLayer = new Container();
+const vignetteLayer = new Container();
+
+root.addChild(surfaceScene, underIceScene, deepScene, cosmicScene, textLayer, vignetteLayer);
+underIceScene.alpha = 0;
+deepScene.alpha = 0;
+cosmicScene.alpha = 0;
+
+buildSurfaceScene(surfaceScene);
+buildUnderIceScene(underIceScene);
+const whale = buildDeepScene(deepScene);
+buildCosmicScene(cosmicScene);
+const portal = buildPortal(vignetteLayer);
+buildMessages(textLayer);
+buildVignette(vignetteLayer);
+
+const timeline = buildTimeline({ surfaceScene, underIceScene, deepScene, cosmicScene, whale, portal });
+timeline.pause(0);
+
+let mode: PlaybackMode = 'idle';
+let silentStartedAt = 0;
+let silentPausedAt = 0;
+let paused = false;
+let ended = false;
+let wasPlayingBeforeHidden = false;
+
+const audio = new Audio();
+audio.preload = 'auto';
+audio.setAttribute('playsinline', '');
+audio.src = `${import.meta.env.BASE_URL}${STORY.audioFile}`;
+audio.load();
+
+resizeStage();
+window.addEventListener('resize', resizeStage, { passive: true });
+window.visualViewport?.addEventListener('resize', resizeStage, { passive: true });
+
+app.ticker.add((ticker) => {
+  const elapsed = ticker.deltaMS / 1000;
+  const storyTime = currentStoryTime();
+
+  if (mode !== 'idle') {
+    timeline.time(Math.min(storyTime, STORY.duration), false);
+    updateAmbientMotion(elapsed, storyTime);
+
+    if (storyTime >= STORY.duration && !ended) {
+      ended = true;
+      pausePlayback();
+      pauseButton.textContent = 'Replay';
+      pauseButton.setAttribute('aria-label', 'Replay animation');
+    }
+  } else {
+    updateAmbientMotion(elapsed, performance.now() / 1000);
+  }
+});
+
+startButton.addEventListener('click', async () => {
+  startButton.disabled = true;
+  startButton.querySelector('span')!.textContent = 'Opening…';
+
+  const hasAudio = await tryStartAudio();
+  if (!hasAudio) {
+    startSilentPreview();
+  }
+
+  controls.hidden = false;
+  startScreen.classList.add('is-hidden');
+  startButton.disabled = false;
+  loading.classList.add('is-hidden');
+});
+
+pauseButton.addEventListener('click', async () => {
+  if (ended) {
+    await restartPlayback();
+    return;
+  }
+
+  if (paused) {
+    await resumePlayback();
+  } else {
+    pausePlayback();
+  }
+});
+
+restartButton.addEventListener('click', restartPlayback);
+
+audio.addEventListener('ended', () => {
+  if (mode === 'audio') {
+    ended = true;
+    paused = true;
+    pauseButton.textContent = 'Replay';
+  }
+});
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    wasPlayingBeforeHidden = mode !== 'idle' && !paused;
+    if (wasPlayingBeforeHidden) pausePlayback();
+  } else if (wasPlayingBeforeHidden && !ended) {
+    void resumePlayback();
+  }
+});
+
+loading.classList.add('is-hidden');
+
+async function tryStartAudio(): Promise<boolean> {
+  try {
+    // Keep play() directly inside the tap handler path. Mobile autoplay policies
+    // can reject playback when too much async work happens before this call.
+    audio.currentTime = 0;
+    await audio.play();
+    mode = 'audio';
+    paused = false;
+    ended = false;
+    demoBadge.hidden = true;
+    pauseButton.textContent = 'Pause';
+    return true;
+  } catch {
+    audioNote.textContent = 'Running the silent preview. Add public/audio/scene-1.mp3 for music sync.';
+    return false;
+  }
+}
+
+function startSilentPreview(): void {
+  mode = 'silent';
+  silentStartedAt = performance.now();
+  silentPausedAt = 0;
+  paused = false;
+  ended = false;
+  demoBadge.hidden = false;
+  pauseButton.textContent = 'Pause';
+}
+
+function currentStoryTime(): number {
+  if (mode === 'audio') return audio.currentTime;
+  if (mode === 'silent') {
+    return paused ? silentPausedAt : (performance.now() - silentStartedAt) / 1000;
+  }
+  return 0;
+}
+
+function pausePlayback(): void {
+  if (mode === 'idle' || paused) return;
+
+  if (mode === 'audio') {
+    audio.pause();
+  } else {
+    silentPausedAt = currentStoryTime();
+  }
+
+  paused = true;
+  pauseButton.textContent = ended ? 'Replay' : 'Resume';
+  pauseButton.setAttribute('aria-label', ended ? 'Replay animation' : 'Resume animation');
+}
+
+async function resumePlayback(): Promise<void> {
+  if (mode === 'idle' || !paused || ended) return;
+
+  if (mode === 'audio') {
+    try {
+      await audio.play();
+    } catch {
+      silentPausedAt = audio.currentTime;
+      mode = 'silent';
+      silentStartedAt = performance.now() - silentPausedAt * 1000;
+      demoBadge.hidden = false;
+    }
+  } else {
+    silentStartedAt = performance.now() - silentPausedAt * 1000;
+  }
+
+  paused = false;
+  pauseButton.textContent = 'Pause';
+  pauseButton.setAttribute('aria-label', 'Pause animation');
+}
+
+async function restartPlayback(): Promise<void> {
+  ended = false;
+  timeline.time(0, false);
+
+  if (mode === 'audio') {
+    audio.currentTime = 0;
+    try {
+      await audio.play();
+      paused = false;
+    } catch {
+      mode = 'silent';
+      silentStartedAt = performance.now();
+      silentPausedAt = 0;
+      paused = false;
+      demoBadge.hidden = false;
+    }
+  } else {
+    mode = 'silent';
+    silentStartedAt = performance.now();
+    silentPausedAt = 0;
+    paused = false;
+  }
+
+  pauseButton.textContent = 'Pause';
+  pauseButton.setAttribute('aria-label', 'Pause animation');
+}
+
+function buildSurfaceScene(scene: Container): void {
+  scene.addChild(createGradientBackground('#061426', '#0b2940', '#6fa3b1'));
+
+  const moonGlow = new Graphics().circle(810, 270, 230).fill({ color: 0xcdf8ff, alpha: 0.08 });
+  const moon = new Graphics().circle(810, 270, 84).fill({ color: 0xe7fbff, alpha: 0.72 });
+  scene.addChild(moonGlow, moon);
+
+  const starsSurface = new Container();
+  for (let i = 0; i < 48; i += 1) {
+    const star = new Graphics()
+      .circle(random(40, DESIGN.width - 40), random(60, 760), random(1.3, 3.2))
+      .fill({ color: 0xe5fbff, alpha: random(0.18, 0.65) });
+    starsSurface.addChild(star);
+  }
+  scene.addChild(starsSurface);
+
+  const farIce = new Graphics()
+    .moveTo(0, 1040)
+    .lineTo(120, 960)
+    .lineTo(240, 1010)
+    .lineTo(410, 900)
+    .lineTo(590, 1004)
+    .lineTo(780, 930)
+    .lineTo(1080, 1020)
+    .lineTo(1080, 1320)
+    .lineTo(0, 1320)
+    .closePath()
+    .fill({ color: 0x9ec9d2, alpha: 0.44 });
+  scene.addChild(farIce);
+
+  const iceShelf = new Graphics()
+    .moveTo(0, 1160)
+    .bezierCurveTo(220, 1080, 330, 1190, 510, 1130)
+    .bezierCurveTo(710, 1060, 830, 1180, 1080, 1100)
+    .lineTo(1080, 1600)
+    .lineTo(0, 1600)
+    .closePath()
+    .fill({ color: 0xd4f3f4, alpha: 0.96 });
+  scene.addChild(iceShelf);
+
+  const reflection = new Graphics().ellipse(540, 1245, 400, 70).fill({ color: 0xdffcff, alpha: 0.09 });
+  scene.addChild(reflection);
+
+  const leftPenguin = createPenguin(-80, 1075, 1, false);
+  const rightPenguin = createPenguin(1160, 1075, 1, true);
+  leftPenguin.label = 'leftPenguin';
+  rightPenguin.label = 'rightPenguin';
+  scene.addChild(leftPenguin, rightPenguin);
+
+  const heart = new Text({
+    text: '♥',
+    style: new TextStyle({
+      fontFamily: 'Georgia, serif',
+      fontSize: 72,
+      fill: 0xf0fbff,
+      align: 'center'
+    })
+  });
+  heart.anchor.set(0.5);
+  heart.position.set(540, 850);
+  heart.alpha = 0;
+  heart.label = 'kissHeart';
+  scene.addChild(heart);
+}
+
+function buildUnderIceScene(scene: Container): void {
+  scene.addChild(createGradientBackground('#06111f', '#031328', '#01040d'));
+
+  const iceCeiling = new Graphics()
+    .moveTo(0, 0)
+    .lineTo(DESIGN.width, 0)
+    .lineTo(DESIGN.width, 420)
+    .bezierCurveTo(820, 350, 720, 470, 510, 390)
+    .bezierCurveTo(310, 320, 160, 460, 0, 370)
+    .closePath()
+    .fill({ color: 0xc7edf2, alpha: 0.72 });
+  scene.addChild(iceCeiling);
+
+  for (let i = 0; i < 6; i += 1) {
+    const shaft = new Graphics()
+      .moveTo(100 + i * 175, 260)
+      .lineTo(230 + i * 175, 260)
+      .lineTo(430 + i * 120, 1470)
+      .lineTo(260 + i * 120, 1470)
+      .closePath()
+      .fill({ color: 0xb7f4ff, alpha: 0.025 + i * 0.006 });
+    shaft.label = `lightShaft-${i}`;
+    scene.addChild(shaft);
+  }
+
+  const crackLayer = new Container();
+  crackLayer.label = 'cracks';
+  const cracks = [
+    [[515, 75], [500, 180], [550, 260], [520, 390]],
+    [[520, 182], [420, 245], [370, 345]],
+    [[545, 258], [650, 300], [720, 420]],
+    [[421, 246], [300, 280], [240, 370]],
+    [[650, 301], [750, 252], [825, 310]]
+  ] as const;
+
+  cracks.forEach((points, index) => {
+    const crack = new Graphics();
+    crack.moveTo(points[0][0], points[0][1]);
+    for (let p = 1; p < points.length; p += 1) {
+      const point = points[p];
+      if (point) crack.lineTo(point[0], point[1]);
+    }
+    crack.stroke({ color: 0xe6fdff, width: index === 0 ? 8 : 5, alpha: 0.86 });
+    crack.alpha = 0;
+    crack.label = `crack-${index}`;
+    crackLayer.addChild(crack);
+  });
+  scene.addChild(crackLayer);
+
+  for (let i = 0; i < (reducedMotion ? 22 : 52); i += 1) {
+    const radius = random(2, 10);
+    const bubble = new Graphics().circle(0, 0, radius).stroke({ color: 0xcff7ff, width: 2, alpha: random(0.12, 0.42) });
+    bubble.position.set(random(30, DESIGN.width - 30), random(360, DESIGN.height + 400));
+    bubbles.push({ view: bubble, speed: random(12, 34), drift: random(9, 28), phase: random(0, Math.PI * 2) });
+    scene.addChild(bubble);
+  }
+}
+
+function buildDeepScene(scene: Container): Container {
+  scene.addChild(createGradientBackground('#020a18', '#020817', '#000208'));
+
+  const distantGlow = new Graphics().circle(540, 800, 480).fill({ color: 0x0a6d84, alpha: 0.045 });
+  scene.addChild(distantGlow);
+
+  for (let i = 0; i < (reducedMotion ? 7 : 14); i += 1) {
+    const creature = createGlowCreature();
+    const item: GlowCreature = {
+      view: creature,
+      baseX: random(60, 1020),
+      baseY: random(240, 1560),
+      phase: random(0, Math.PI * 2),
+      speed: random(0.22, 0.48)
+    };
+    creature.position.set(item.baseX, item.baseY);
+    creature.scale.set(random(0.55, 1.25));
+    creatures.push(item);
+    scene.addChild(creature);
+  }
+
+  const whale = createWhale();
+  whale.position.set(1220, 1020);
+  whale.scale.set(0.76);
+  whale.alpha = 0;
+  whale.label = 'whale';
+  scene.addChild(whale);
+  return whale;
+}
+
+function buildCosmicScene(scene: Container): void {
+  scene.addChild(createGradientBackground('#030414', '#080827', '#02030b'));
+
+  for (let i = 0; i < (reducedMotion ? 70 : 170); i += 1) {
+    const radius = random(1, 4.2);
+    const view = new Graphics().circle(0, 0, radius).fill({ color: randomPick([0xffffff, 0xbdeeff, 0xcbbcff]), alpha: 1 });
+    view.position.set(random(0, DESIGN.width), random(0, DESIGN.height));
+    const star: Star = {
+      view,
+      baseAlpha: random(0.15, 0.9),
+      phase: random(0, Math.PI * 2),
+      speed: random(0.5, 1.7)
+    };
+    view.alpha = star.baseAlpha;
+    stars.push(star);
+    scene.addChild(view);
+  }
+
+  const nebulaA = new Graphics().ellipse(260, 680, 530, 220).fill({ color: 0x4e41a9, alpha: 0.06 });
+  nebulaA.rotation = -0.4;
+  const nebulaB = new Graphics().ellipse(860, 1210, 580, 250).fill({ color: 0x1299a8, alpha: 0.05 });
+  nebulaB.rotation = 0.55;
+  scene.addChild(nebulaA, nebulaB);
+
+  const horizon = new Graphics().circle(540, 2130, 660).fill({ color: 0x103253, alpha: 0.58 });
+  const horizonGlow = new Graphics().circle(540, 2130, 720).stroke({ color: 0x92edff, width: 10, alpha: 0.13 });
+  scene.addChild(horizonGlow, horizon);
+}
+
+function buildPortal(layer: Container): Container {
+  const portal = new Container();
+  portal.position.set(540, 960);
+  portal.alpha = 0;
+  portal.scale.set(0.02);
+  portal.label = 'portal';
+
+  const glowOuter = new Graphics().circle(0, 0, 170).fill({ color: 0x64dff2, alpha: 0.10 });
+  const rim = new Graphics().circle(0, 0, 110).stroke({ color: 0xc8f8ff, width: 10, alpha: 0.72 });
+  const center = new Graphics().circle(0, 0, 104).fill({ color: 0x01020a, alpha: 1 });
+  const glint = new Graphics().ellipse(-28, -34, 24, 12).fill({ color: 0xe9fdff, alpha: 0.8 });
+  portal.addChild(glowOuter, center, rim, glint);
+  layer.addChild(portal);
+  return portal;
+}
+
+function buildVignette(layer: Container): void {
+  const top = new Graphics().rect(0, 0, DESIGN.width, 260).fill({ color: 0x000000, alpha: 0.22 });
+  const bottom = new Graphics().rect(0, DESIGN.height - 330, DESIGN.width, 330).fill({ color: 0x000000, alpha: 0.32 });
+  layer.addChildAt(top, 0);
+  layer.addChildAt(bottom, 1);
+}
+
+function buildMessages(layer: Container): void {
+  STORY.messages.forEach((message, index) => {
+    const group = createMessage(message.text);
+    group.position.set(540, index === STORY.messages.length - 1 ? 860 : 1040);
+    group.alpha = 0;
+    group.label = `message-${index}`;
+    layer.addChild(group);
+  });
+}
+
+function buildTimeline(parts: {
+  surfaceScene: Container;
+  underIceScene: Container;
+  deepScene: Container;
+  cosmicScene: Container;
+  whale: Container;
+  portal: Container;
+}) {
+  const tl = gsap.timeline({ paused: true, defaults: { ease: 'power2.inOut' } });
+  const leftPenguin = parts.surfaceScene.getChildByLabel('leftPenguin') as Container;
+  const rightPenguin = parts.surfaceScene.getChildByLabel('rightPenguin') as Container;
+  const kissHeart = parts.surfaceScene.getChildByLabel('kissHeart') as Text;
+  const cracks = parts.underIceScene.getChildByLabel('cracks') as Container;
+
+  tl.set(parts.surfaceScene, { alpha: 1 }, 0)
+    .fromTo(leftPenguin.position, { x: -80 }, { x: 425, duration: 3.4, ease: 'power2.out' }, STORY.cues.penguinsEnter)
+    .fromTo(rightPenguin.position, { x: 1160 }, { x: 655, duration: 3.4, ease: 'power2.out' }, STORY.cues.penguinsEnter)
+    .to(leftPenguin, { rotation: 0.08, duration: 1.1, yoyo: true, repeat: 1 }, STORY.cues.kiss)
+    .to(rightPenguin, { rotation: -0.08, duration: 1.1, yoyo: true, repeat: 1 }, STORY.cues.kiss)
+    .to(leftPenguin.position, { x: 486, duration: 1.05, ease: 'sine.inOut' }, STORY.cues.kiss)
+    .to(rightPenguin.position, { x: 594, duration: 1.05, ease: 'sine.inOut' }, STORY.cues.kiss)
+    .to(kissHeart, { alpha: 1, y: 790, duration: 0.7, ease: 'back.out(2)' }, STORY.cues.kiss + 0.45)
+    .to(kissHeart, { alpha: 0, y: 720, duration: 1.5 }, STORY.cues.kiss + 1.3)
+    .to(parts.surfaceScene.scale, { x: 1.06, y: 1.06, duration: 2.2, ease: 'sine.inOut' }, STORY.cues.emotionalDrop)
+    .to(parts.surfaceScene.position, { y: -360, duration: 3.6, ease: 'power3.in' }, STORY.cues.emotionalDrop)
+    .to(parts.surfaceScene, { alpha: 0, duration: 2.6 }, STORY.cues.underIce)
+    .to(parts.underIceScene, { alpha: 1, duration: 2.2 }, STORY.cues.underIce - 1.4);
+
+  cracks.children.forEach((crack, index) => {
+    tl.to(crack, { alpha: 1, duration: 0.24 }, STORY.cues.firstCrack + index * 0.55);
+  });
+
+  tl.to(parts.underIceScene.position, { y: -85, duration: 12, ease: 'none' }, STORY.cues.underIce)
+    .to(parts.underIceScene, { alpha: 0.26, duration: 4 }, STORY.cues.deepWater)
+    .to(parts.deepScene, { alpha: 1, duration: 4 }, STORY.cues.deepWater - 1.2)
+    .fromTo(parts.deepScene.position, { y: 120 }, { y: 0, duration: 9, ease: 'sine.out' }, STORY.cues.deepWater - 1.2)
+    .to(parts.whale, { alpha: 0.88, duration: 3.5 }, STORY.cues.whale)
+    .to(parts.whale.position, { x: 560, duration: 8, ease: 'sine.inOut' }, STORY.cues.whale)
+    .to(parts.whale.scale, { x: 1.12, y: 1.12, duration: 8, ease: 'sine.inOut' }, STORY.cues.whale)
+    .to(parts.whale.position, { x: 540, y: 960, duration: 3.5, ease: 'power2.inOut' }, STORY.cues.eyePortal - 2.8)
+    .to(parts.whale.scale, { x: 3.8, y: 3.8, duration: 4.0, ease: 'power3.in' }, STORY.cues.eyePortal - 2.0)
+    .to(parts.portal, { alpha: 1, duration: 0.5 }, STORY.cues.eyePortal)
+    .to(parts.portal.scale, { x: 15, y: 15, duration: 3.4, ease: 'power3.in' }, STORY.cues.eyePortal)
+    .to(parts.deepScene, { alpha: 0, duration: 2.2 }, STORY.cues.eyePortal + 1.0)
+    .to(parts.underIceScene, { alpha: 0, duration: 2.2 }, STORY.cues.eyePortal + 1.0)
+    .to(parts.cosmicScene, { alpha: 1, duration: 3.0 }, STORY.cues.stars - 1.2)
+    .fromTo(parts.cosmicScene.scale, { x: 1.25, y: 1.25 }, { x: 1, y: 1, duration: 10, ease: 'sine.out' }, STORY.cues.stars - 1.2)
+    .to(parts.portal, { alpha: 0, duration: 2.0 }, STORY.cues.stars + 0.6)
+    .to(parts.cosmicScene.position, { y: -75, duration: 16, ease: 'none' }, STORY.cues.stars);
+
+  STORY.messages.forEach((message, index) => {
+    const group = textLayer.getChildByLabel(`message-${index}`) as Container;
+    tl.fromTo(
+      group,
+      { alpha: 0 },
+      { alpha: 1, duration: 0.9, ease: 'sine.out' },
+      message.at
+    )
+      .fromTo(group.position, { y: group.position.y + 45 }, { y: group.position.y, duration: 1.2, ease: 'power2.out' }, message.at)
+      .to(group, { alpha: 0, duration: 1.2, ease: 'sine.in' }, message.at + message.duration - 1.2);
+  });
+
+  tl.to(parts.cosmicScene, { alpha: 0.72, duration: 3.5 }, STORY.cues.ending);
+  return tl;
+}
+
+function createPenguin(x: number, y: number, scale: number, facingLeft: boolean): Container {
+  const penguin = new Container();
+  penguin.position.set(x, y);
+  penguin.scale.set(facingLeft ? -scale : scale, scale);
+  penguin.pivot.set(0, 130);
+
+  const shadow = new Graphics().ellipse(0, 160, 115, 28).fill({ color: 0x19384b, alpha: 0.18 });
+  const body = new Graphics().ellipse(0, 0, 112, 158).fill({ color: 0x101824, alpha: 1 });
+  const belly = new Graphics().ellipse(18, 28, 73, 112).fill({ color: 0xf1faf9, alpha: 0.96 });
+  const head = new Graphics().circle(5, -122, 85).fill({ color: 0x101824, alpha: 1 });
+  const face = new Graphics().ellipse(28, -112, 54, 47).fill({ color: 0xf1faf9, alpha: 0.96 });
+  const eye = new Graphics().circle(50, -130, 8).fill({ color: 0x02050a, alpha: 1 });
+  const eyeLight = new Graphics().circle(53, -133, 2.5).fill({ color: 0xffffff, alpha: 0.9 });
+  const beak = new Graphics()
+    .moveTo(72, -105)
+    .lineTo(112, -92)
+    .lineTo(73, -78)
+    .closePath()
+    .fill({ color: 0xf0a33f, alpha: 1 });
+  const wing = new Graphics().ellipse(-80, 18, 30, 94).fill({ color: 0x0b111b, alpha: 1 });
+  wing.rotation = -0.25;
+  const footA = new Graphics().ellipse(-34, 145, 38, 16).fill({ color: 0xe99a38, alpha: 0.9 });
+  const footB = new Graphics().ellipse(36, 145, 38, 16).fill({ color: 0xe99a38, alpha: 0.9 });
+
+  penguin.addChild(shadow, footA, footB, body, wing, belly, head, face, eye, eyeLight, beak);
+  return penguin;
+}
+
+function createGlowCreature(): Container {
+  const creature = new Container();
+  const glow = new Graphics().circle(0, 0, 38).fill({ color: 0x52efff, alpha: 0.07 });
+  const body = new Graphics().ellipse(0, 0, 10, 30).fill({ color: 0x94f8ff, alpha: 0.74 });
+  const head = new Graphics().circle(0, -32, 9).fill({ color: 0xc9fbff, alpha: 0.82 });
+  const leftTop = new Graphics().ellipse(-24, -10, 30, 9).fill({ color: 0x7ceaf5, alpha: 0.24 });
+  const rightTop = new Graphics().ellipse(24, -10, 30, 9).fill({ color: 0x7ceaf5, alpha: 0.24 });
+  const leftBottom = new Graphics().ellipse(-21, 11, 25, 8).fill({ color: 0xa78cf8, alpha: 0.19 });
+  const rightBottom = new Graphics().ellipse(21, 11, 25, 8).fill({ color: 0xa78cf8, alpha: 0.19 });
+  leftTop.rotation = -0.3;
+  rightTop.rotation = 0.3;
+  leftBottom.rotation = 0.28;
+  rightBottom.rotation = -0.28;
+  creature.addChild(glow, leftTop, rightTop, leftBottom, rightBottom, body, head);
+  creature.alpha = random(0.28, 0.72);
+  return creature;
+}
+
+function createWhale(): Container {
+  const whale = new Container();
+  const body = new Graphics().ellipse(0, 0, 430, 168).fill({ color: 0x071526, alpha: 0.96 });
+  const lowerBody = new Graphics().ellipse(80, 58, 312, 92).fill({ color: 0x0a2134, alpha: 0.72 });
+  const fin = new Graphics()
+    .moveTo(20, 70)
+    .bezierCurveTo(80, 170, 180, 190, 218, 120)
+    .bezierCurveTo(142, 118, 88, 88, 20, 70)
+    .closePath()
+    .fill({ color: 0x06111e, alpha: 1 });
+  const tailTop = new Graphics()
+    .moveTo(405, -20)
+    .bezierCurveTo(500, -125, 565, -90, 548, -10)
+    .bezierCurveTo(500, 28, 456, 20, 405, -20)
+    .closePath()
+    .fill({ color: 0x06111e, alpha: 1 });
+  const tailBottom = new Graphics()
+    .moveTo(405, -8)
+    .bezierCurveTo(500, 106, 565, 70, 548, 0)
+    .bezierCurveTo(500, -25, 456, -22, 405, -8)
+    .closePath()
+    .fill({ color: 0x06111e, alpha: 1 });
+  const eyeGlow = new Graphics().circle(-245, -44, 34).fill({ color: 0x73e8f7, alpha: 0.09 });
+  const eye = new Graphics().circle(-245, -44, 13).fill({ color: 0xbdf8ff, alpha: 0.88 });
+  const pupil = new Graphics().circle(-245, -44, 6).fill({ color: 0x01030a, alpha: 1 });
+  const eyeGlint = new Graphics().circle(-249, -48, 2.4).fill({ color: 0xffffff, alpha: 1 });
+  const mouth = new Graphics().moveTo(-360, 50).bezierCurveTo(-250, 112, -110, 118, 35, 96).stroke({ color: 0x4d7082, width: 5, alpha: 0.35 });
+  whale.addChild(tailTop, tailBottom, body, lowerBody, fin, mouth, eyeGlow, eye, pupil, eyeGlint);
+  return whale;
+}
+
+function createMessage(text: string): Container {
+  const group = new Container();
+  const style = new TextStyle({
+    fontFamily: 'Georgia, Times New Roman, serif',
+    fontSize: text.length > 34 ? 48 : 64,
+    fontStyle: 'italic',
+    fontWeight: '400',
+    fill: 0xeafcff,
+    align: 'center',
+    wordWrap: true,
+    wordWrapWidth: 820,
+    lineHeight: 76,
+    letterSpacing: 1.2
+  });
+  const shadow = new Text({ text, style });
+  shadow.anchor.set(0.5);
+  shadow.position.set(0, 5);
+  shadow.tint = 0x07111f;
+  shadow.alpha = 0.62;
+  const main = new Text({ text, style });
+  main.anchor.set(0.5);
+  group.addChild(shadow, main);
+  return group;
+}
+
+function createGradientBackground(top: string, middle: string, bottom: string): Sprite {
+  const canvas = document.createElement('canvas');
+  canvas.width = 8;
+  canvas.height = 1024;
+  const context = canvas.getContext('2d');
+  if (!context) throw new Error('Canvas 2D context unavailable');
+  const gradient = context.createLinearGradient(0, 0, 0, canvas.height);
+  gradient.addColorStop(0, top);
+  gradient.addColorStop(0.52, middle);
+  gradient.addColorStop(1, bottom);
+  context.fillStyle = gradient;
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  const sprite = new Sprite(Texture.from(canvas));
+  sprite.width = DESIGN.width;
+  sprite.height = DESIGN.height;
+  return sprite;
+}
+
+function updateAmbientMotion(delta: number, time: number): void {
+  bubbles.forEach((bubble) => {
+    bubble.view.y -= bubble.speed * delta;
+    bubble.view.x += Math.sin(time * 0.8 + bubble.phase) * bubble.drift * delta;
+    if (bubble.view.y < 260) {
+      bubble.view.y = DESIGN.height + random(20, 320);
+      bubble.view.x = random(30, DESIGN.width - 30);
+    }
+  });
+
+  creatures.forEach((creature) => {
+    creature.view.x = creature.baseX + Math.sin(time * creature.speed + creature.phase) * 72;
+    creature.view.y = creature.baseY + Math.cos(time * creature.speed * 0.8 + creature.phase) * 36;
+    creature.view.rotation = Math.sin(time * creature.speed + creature.phase) * 0.1;
+  });
+
+  stars.forEach((star) => {
+    star.view.alpha = Math.max(0.08, star.baseAlpha + Math.sin(time * star.speed + star.phase) * 0.2);
+    star.view.y += 1.8 * delta;
+    if (star.view.y > DESIGN.height + 8) star.view.y = -8;
+  });
+}
+
+function resizeStage(): void {
+  const width = app.screen.width;
+  const height = app.screen.height;
+  const scale = Math.max(width / DESIGN.width, height / DESIGN.height);
+  root.scale.set(scale);
+  root.position.set((width - DESIGN.width * scale) / 2, (height - DESIGN.height * scale) / 2);
+}
+
+function requiredElement<T extends Element>(selector: string): T {
+  const element = document.querySelector<T>(selector);
+  if (!element) throw new Error(`Missing required element: ${selector}`);
+  return element;
+}
+
+function random(min: number, max: number): number {
+  return Math.random() * (max - min) + min;
+}
+
+function randomPick<T>(items: readonly T[]): T {
+  const item = items[Math.floor(Math.random() * items.length)];
+  if (item === undefined) throw new Error('Cannot pick from an empty array');
+  return item;
+}
