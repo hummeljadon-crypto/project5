@@ -2,1646 +2,1098 @@
   "use strict";
 
   const canvas = document.querySelector("#scene");
-  const context = canvas.getContext("2d", { alpha: false, desynchronized: true });
+  const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
   const intro = document.querySelector("#intro");
   const startButton = document.querySelector("#startButton");
-  const playButton = document.querySelector("#playButton");
-  const pauseButton = document.querySelector("#pauseButton");
+  const playPauseButton = document.querySelector("#playPauseButton");
   const restartButton = document.querySelector("#restartButton");
-  const scrubber = document.querySelector("#scrubber");
-  const clock = document.querySelector("#clock");
+  const timeline = document.querySelector("#timeline");
+  const timeReadout = document.querySelector("#timeReadout");
 
-  if (!context) {
-    throw new Error("This browser does not support Canvas 2D.");
-  }
+  const VIEW = { w: 1080, h: 1920 };
+  const TOTAL = 138;
 
-  const TOTAL_DURATION = 198;
-  const DESCENT_DURATION = 133;
-  const REDUCED_MOTION = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-  const TIMELINE = Object.freeze({
-    surface: [0, 6],
-    kiss: [6, 10],
-    enterIce: [10, 12],
-    descent: [12, 145],
-    bottomReveal: [145, 151],
-    convergence: [151, 158],
-    shatter: [158, 164],
-    darkness: [164, 169],
-    fish: [169, 178],
-    whale: [178, 190],
-    eye: [190, 198],
-  });
-
-  const PHRASES = Object.freeze([
-    { text: "until the end", start: 18, end: 25, side: -1, tilt: -0.08 },
-    { text: "i love you, always", start: 43, end: 51, side: 1, tilt: 0.06 },
-    { text: "never let go", start: 78, end: 85, side: -1, tilt: -0.04 },
-    { text: "planting the seed", start: 108, end: 115, side: 1, tilt: 0.05 },
-  ]);
-
-  const state = {
-    width: 0,
-    height: 0,
-    dpr: 1,
-    time: 0,
-    playing: false,
-    lastFrame: 0,
-    frameRequest: 0,
+  // Easy-to-edit story beats. The descent is intentionally paced by emotion, not a song duration.
+  const BEATS = {
+    surface: [0, 7],
+    kiss: [7, 11],
+    revealScale: [11, 18],
+    descent: [18, 88],
+    bottomHold: [88, 97],
+    converge: [97, 104],
+    shatter: [104, 110],
+    blackout: [110, 114],
+    fish: [114, 123],
+    whale: [123, 132],
+    eye: [132, 138],
   };
 
-  function mulberry32(seed) {
-    let value = seed >>> 0;
-    return () => {
-      value += 0x6d2b79f5;
-      let result = value;
-      result = Math.imul(result ^ (result >>> 15), result | 1);
-      result ^= result + Math.imul(result ^ (result >>> 7), result | 61);
-      return ((result ^ (result >>> 14)) >>> 0) / 4294967296;
-    };
+  // The words remain exactly in the order supplied.
+  const PHRASES = [
+    ["always love you", 18.0, 20.8, "mist"],
+    ["swear", 21.2, 23.0, "small"],
+    ["not scared", 23.5, 26.0, "fracture"],
+    ["only when youre not here", 26.5, 30.3, "deep"],
+    ["this", 30.8, 32.3, "small"],
+    ["F O R E V E R", 32.8, 36.8, "hero"],
+    ["only youuu", 37.3, 40.2, "mist"],
+    ["us", 40.7, 42.2, "small"],
+    ["you my home", 42.7, 46.2, "shelf"],
+    ["fixxing everything in me", 46.7, 50.4, "deep"],
+    ["a seed", 50.9, 53.6, "seed"],
+    ["f o r e v e r", 54.1, 57.5, "mist"],
+    ["do i make myself clear", 58.0, 61.7, "fracture"],
+    ["this for life", 62.2, 65.0, "deep"],
+    ["soul to keep", 65.5, 68.3, "mist"],
+    ["one day  a baby", 68.8, 72.2, "deep"],
+    ["my baby", 72.7, 75.0, "small"],
+    ["crazy...", 75.5, 78.0, "fracture"],
+    ["for your loveeee", 78.5, 81.5, "mist"],
+    ["a blessin from above", 82.0, 85.4, "deep"],
+    ["to fall in love", 85.9, 88.7, "mist"],
+    ["is to take risk", 89.2, 92.1, "fracture"],
+    ["im not scared", 92.6, 95.4, "deep"],
+    ["always loveee youu", 95.9, 100.2, "hero"],
+  ].map(([text, start, end, style]) => ({ text, start, end, style }));
+
+  const state = {
+    time: 0,
+    playing: false,
+    last: 0,
+    raf: 0,
+    cssW: 0,
+    cssH: 0,
+    dpr: 1,
+    scale: 1,
+    offsetX: 0,
+    offsetY: 0,
+  };
+
+  const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const inv = (a, b, v) => clamp((v - a) / (b - a));
+  const smooth = (t) => t * t * (3 - 2 * t);
+  const easeInOut = (t) => t < 0.5 ? 4 * t ** 3 : 1 - ((-2 * t + 2) ** 3) / 2;
+  const easeOut = (t) => 1 - (1 - t) ** 3;
+  const easeIn = (t) => t ** 3;
+  const hash = (n) => {
+    const x = Math.sin(n * 127.1 + 311.7) * 43758.5453123;
+    return x - Math.floor(x);
+  };
+
+  function beat(name) {
+    const [a, b] = BEATS[name];
+    return inv(a, b, state.time);
   }
 
-  const random = mulberry32(17032026);
-
-  const snow = Array.from({ length: 110 }, () => ({
-    x: random(),
-    y: random(),
-    radius: 0.45 + random() * 2.1,
-    speed: 0.12 + random() * 0.48,
-    sway: random() * Math.PI * 2,
-  }));
-
-  const suspendedParticles = Array.from({ length: 95 }, () => ({
-    x: random(),
-    y: random(),
-    radius: 0.4 + random() * 2.4,
-    speed: 0.15 + random() * 0.7,
-    phase: random() * Math.PI * 2,
-  }));
-
-  const slabShapes = Array.from({ length: 30 }, (_, slabIndex) => {
-    const slabRandom = mulberry32(9000 + slabIndex * 73);
-    return {
-      rotation: (slabRandom() - 0.5) * 0.25,
-      offsetX: (slabRandom() - 0.5) * 0.28,
-      offsetY: (slabRandom() - 0.5) * 0.2,
-      thickness: 0.08 + slabRandom() * 0.14,
-      points: Array.from({ length: 18 }, (_, pointIndex) => {
-        const angle = (pointIndex / 18) * Math.PI * 2;
-        return {
-          angle,
-          roughness:
-            0.86 +
-            slabRandom() * 0.24 +
-            Math.sin(angle * (2 + (slabIndex % 3))) * 0.035,
-        };
-      }),
-    };
-  });
-
-  const fish = Array.from({ length: 18 }, (_, index) => {
-    const fishRandom = mulberry32(301 + index * 19);
-    return {
-      x: fishRandom(),
-      y: 0.22 + fishRandom() * 0.56,
-      speed: 0.04 + fishRandom() * 0.1,
-      scale: 0.65 + fishRandom() * 0.9,
-      phase: fishRandom() * Math.PI * 2,
-    };
-  });
-
-  const pages = Array.from({ length: 9 }, (_, index) => {
-    const pageRandom = mulberry32(1700 + index * 17);
-    return {
-      x: pageRandom(),
-      y: pageRandom(),
-      rotation: pageRandom() * Math.PI * 2,
-      spin: (pageRandom() - 0.5) * 2,
-    };
-  });
-
-  function clamp(value, minimum = 0, maximum = 1) {
-    return Math.max(minimum, Math.min(maximum, value));
-  }
-
-  function lerp(start, end, amount) {
-    return start + (end - start) * amount;
-  }
-
-  function inverseLerp(start, end, value) {
-    return clamp((value - start) / (end - start));
-  }
-
-  function smoothstep(value) {
-    const x = clamp(value);
-    return x * x * (3 - 2 * x);
-  }
-
-  function smootherstep(value) {
-    const x = clamp(value);
-    return x * x * x * (x * (x * 6 - 15) + 10);
-  }
-
-  function easeOutCubic(value) {
-    const x = clamp(value);
-    return 1 - Math.pow(1 - x, 3);
-  }
-
-  function easeInCubic(value) {
-    const x = clamp(value);
-    return x * x * x;
-  }
-
-  function easeInOutCubic(value) {
-    const x = clamp(value);
-    return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
-  }
-
-  function pulse(value, start, peak, end) {
-    if (value <= start || value >= end) return 0;
-    if (value < peak) return smoothstep((value - start) / (peak - start));
-    return 1 - smoothstep((value - peak) / (end - peak));
-  }
-
-  function fract(value) {
-    return value - Math.floor(value);
-  }
-
-  function sceneProgress(name) {
-    const [start, end] = TIMELINE[name];
-    return inverseLerp(start, end, state.time);
-  }
-
-  function sceneIsActive(name) {
-    const [start, end] = TIMELINE[name];
-    return state.time >= start && state.time < end;
-  }
-
-  function formatTime(seconds) {
-    const minutes = Math.floor(seconds / 60);
-    const remaining = Math.floor(seconds % 60).toString().padStart(2, "0");
-    return `${minutes}:${remaining}`;
-  }
-
-  function rgba(color, alpha = 1) {
-    return `rgba(${Math.round(color[0])}, ${Math.round(color[1])}, ${Math.round(
-      color[2]
-    )}, ${alpha})`;
-  }
-
-  function mixColor(first, second, amount) {
-    return [
-      lerp(first[0], second[0], amount),
-      lerp(first[1], second[1], amount),
-      lerp(first[2], second[2], amount),
-    ];
+  function active(name) {
+    const [a, b] = BEATS[name];
+    return state.time >= a && state.time <= b;
   }
 
   function resize() {
-    const rectangle = canvas.getBoundingClientRect();
-    state.width = Math.max(1, rectangle.width);
-    state.height = Math.max(1, rectangle.height);
+    const r = canvas.getBoundingClientRect();
+    state.cssW = Math.max(1, r.width);
+    state.cssH = Math.max(1, r.height);
     state.dpr = Math.min(window.devicePixelRatio || 1, 2);
-    canvas.width = Math.round(state.width * state.dpr);
-    canvas.height = Math.round(state.height * state.dpr);
-    context.setTransform(state.dpr, 0, 0, state.dpr, 0, 0);
+    canvas.width = Math.round(state.cssW * state.dpr);
+    canvas.height = Math.round(state.cssH * state.dpr);
+    state.scale = Math.max(state.cssW / VIEW.w, state.cssH / VIEW.h);
+    state.offsetX = (state.cssW - VIEW.w * state.scale) * 0.5;
+    state.offsetY = (state.cssH - VIEW.h * state.scale) * 0.5;
     render();
   }
 
-  function clear(color = "#02050a") {
-    context.save();
-    context.setTransform(state.dpr, 0, 0, state.dpr, 0, 0);
-    context.fillStyle = color;
-    context.fillRect(0, 0, state.width, state.height);
-    context.restore();
-  }
-
-  function drawVerticalGradient(top, bottom) {
-    const gradient = context.createLinearGradient(0, 0, 0, state.height);
-    gradient.addColorStop(0, top);
-    gradient.addColorStop(1, bottom);
-    context.fillStyle = gradient;
-    context.fillRect(0, 0, state.width, state.height);
-  }
-
-  function drawVignette(amount = 0.5) {
-    const radius = Math.max(state.width, state.height) * 0.78;
-    const gradient = context.createRadialGradient(
-      state.width * 0.5,
-      state.height * 0.48,
-      radius * 0.18,
-      state.width * 0.5,
-      state.height * 0.48,
-      radius
-    );
-    gradient.addColorStop(0, "rgba(0,0,0,0)");
-    gradient.addColorStop(1, `rgba(0,0,0,${clamp(amount, 0, 0.9)})`);
-    context.fillStyle = gradient;
-    context.fillRect(0, 0, state.width, state.height);
-  }
-
-  function drawSurfaceSky() {
-    drawVerticalGradient("#758ea7", "#d6e8f1");
-
-    const horizonGlow = context.createRadialGradient(
-      state.width * 0.5,
-      state.height * 0.58,
-      0,
-      state.width * 0.5,
-      state.height * 0.58,
-      state.width * 0.85
-    );
-    horizonGlow.addColorStop(0, "rgba(241,248,252,0.42)");
-    horizonGlow.addColorStop(1, "rgba(241,248,252,0)");
-    context.fillStyle = horizonGlow;
-    context.fillRect(0, 0, state.width, state.height);
-
-    context.save();
-    context.globalAlpha = 0.16;
-    context.lineCap = "round";
-    for (let band = 0; band < 3; band += 1) {
-      context.beginPath();
-      for (let x = -20; x <= state.width + 20; x += 12) {
-        const normalized = x / state.width;
-        const y =
-          state.height * (0.13 + band * 0.045) +
-          Math.sin(normalized * 7 + state.time * 0.16 + band) * 20 +
-          Math.sin(normalized * 13 + band * 1.8) * 8;
-        if (x === -20) context.moveTo(x, y);
-        else context.lineTo(x, y);
-      }
-      context.strokeStyle = band === 1 ? "#b8fff2" : "#a7dcff";
-      context.lineWidth = 17 - band * 4;
-      context.stroke();
-    }
-
-    // Hidden D in the aurora.
-    context.globalAlpha = 0.075;
-    context.strokeStyle = "#effaff";
-    context.lineWidth = 8;
-    const dX = state.width * 0.76;
-    const dY = state.height * 0.15;
-    context.beginPath();
-    context.moveTo(dX - 17, dY - 23);
-    context.lineTo(dX - 17, dY + 23);
-    context.bezierCurveTo(dX + 25, dY + 19, dX + 25, dY - 19, dX - 17, dY - 23);
-    context.stroke();
-    context.restore();
-  }
-
-  function drawSnow() {
-    context.save();
-    context.fillStyle = "#ffffff";
-    for (const flake of snow) {
-      const x =
-        flake.x * state.width +
-        Math.sin(state.time * 0.5 + flake.sway) * 18 * flake.speed;
-      const y = fract(flake.y + state.time * 0.018 * flake.speed) * (state.height + 40) - 20;
-      context.globalAlpha = 0.18 + flake.speed * 0.34;
-      context.beginPath();
-      context.arc(x, y, flake.radius, 0, Math.PI * 2);
-      context.fill();
-    }
-    context.restore();
-  }
-
-  function drawIceSurface() {
-    const horizon = state.height * 0.67;
-    context.save();
-    const gradient = context.createLinearGradient(0, horizon, 0, state.height);
-    gradient.addColorStop(0, "#e6f2f7");
-    gradient.addColorStop(1, "#b8d7e5");
-    context.fillStyle = gradient;
-    context.beginPath();
-    context.moveTo(0, horizon + 12);
-    context.quadraticCurveTo(state.width * 0.22, horizon - 18, state.width * 0.48, horizon + 3);
-    context.quadraticCurveTo(state.width * 0.74, horizon + 23, state.width, horizon - 7);
-    context.lineTo(state.width, state.height);
-    context.lineTo(0, state.height);
-    context.closePath();
-    context.fill();
-
-    context.globalAlpha = 0.22;
-    context.strokeStyle = "#ffffff";
-    context.lineWidth = 1.2;
-    for (let line = 0; line < 8; line += 1) {
-      const y = horizon + 26 + line * 18;
-      context.beginPath();
-      context.moveTo(-20, y);
-      context.bezierCurveTo(
-        state.width * 0.32,
-        y - 12,
-        state.width * 0.68,
-        y + 13,
-        state.width + 20,
-        y - 3
-      );
-      context.stroke();
-    }
-    context.restore();
-  }
-
-  function drawBreath(x, y, direction, strength) {
-    context.save();
-    for (let puff = 0; puff < 3; puff += 1) {
-      const age = fract(state.time * 0.4 + puff / 3);
-      context.globalAlpha = (1 - age) * 0.09 * strength;
-      context.fillStyle = "#f7fcff";
-      context.beginPath();
-      context.ellipse(
-        x + direction * age * 32,
-        y - age * 12,
-        7 + age * 11,
-        4 + age * 6,
-        direction * -0.15,
-        0,
-        Math.PI * 2
-      );
-      context.fill();
-    }
-    context.restore();
-  }
-
-  function drawPenguin(x, y, scale, direction, lean, blink) {
-    context.save();
-    context.translate(x, y);
-    context.scale(scale * direction, scale);
-    context.rotate(lean * direction);
-
-    const breathing = Math.sin(state.time * 1.65 + x * 0.01) * 0.7;
-
-    context.fillStyle = "rgba(10,14,18,0.18)";
-    context.beginPath();
-    context.ellipse(0, 49, 23, 7, 0, 0, Math.PI * 2);
-    context.fill();
-
-    context.fillStyle = "#c89242";
-    context.beginPath();
-    context.ellipse(-8, 42, 8, 3.2, 0.12, 0, Math.PI * 2);
-    context.ellipse(8, 42, 8, 3.2, -0.12, 0, Math.PI * 2);
-    context.fill();
-
-    const bodyGradient = context.createLinearGradient(-24, -30, 22, 44);
-    bodyGradient.addColorStop(0, "#12171d");
-    bodyGradient.addColorStop(0.65, "#252d35");
-    bodyGradient.addColorStop(1, "#0d1116");
-    context.fillStyle = bodyGradient;
-    context.beginPath();
-    context.ellipse(0, 7 + breathing, 23, 38, -0.04, 0, Math.PI * 2);
-    context.fill();
-
-    context.fillStyle = "#e7edf0";
-    context.beginPath();
-    context.ellipse(3, 13 + breathing, 14, 28, -0.08, 0, Math.PI * 2);
-    context.fill();
-
-    context.fillStyle = "#161b21";
-    context.beginPath();
-    context.ellipse(-19, 5, 7, 21, 0.18, 0, Math.PI * 2);
-    context.fill();
-
-    context.fillStyle = "#11161c";
-    context.beginPath();
-    context.ellipse(0, -29, 18, 20, 0.06, 0, Math.PI * 2);
-    context.fill();
-
-    context.fillStyle = "#e9eef1";
-    context.beginPath();
-    context.ellipse(6, -26, 9, 12, 0.12, 0, Math.PI * 2);
-    context.fill();
-
-    context.fillStyle = "#15191e";
-    if (blink > 0.94) {
-      context.fillRect(9, -30, 5, 1);
-    } else {
-      context.beginPath();
-      context.arc(11, -30, 1.45, 0, Math.PI * 2);
-      context.fill();
-    }
-
-    context.fillStyle = "#c89242";
-    context.beginPath();
-    context.moveTo(12, -25);
-    context.lineTo(24, -21);
-    context.lineTo(12, -18);
-    context.closePath();
-    context.fill();
-
-    context.restore();
-  }
-
-  function drawDateCrack(progress, strong = false) {
-    if (progress <= 0) return;
-    const centerX = state.width * 0.5;
-    const baseY = state.height * 0.695;
-    const spread = state.width * 0.48 * easeOutCubic(progress);
-
-    context.save();
-    context.lineCap = "round";
-    context.lineJoin = "round";
-    context.strokeStyle = strong ? "rgba(91,168,213,0.95)" : "rgba(85,150,188,0.8)";
-    context.lineWidth = strong ? 3.2 : 1.8;
-    context.shadowBlur = strong ? 16 : 9;
-    context.shadowColor = "rgba(117,207,255,0.55)";
-
-    const drawBranch = (direction) => {
-      context.beginPath();
-      context.moveTo(centerX, baseY);
-      context.lineTo(centerX + direction * spread * 0.16, baseY + 7);
-      context.lineTo(centerX + direction * spread * 0.34, baseY - 3);
-      context.lineTo(centerX + direction * spread * 0.56, baseY + 12);
-      context.lineTo(centerX + direction * spread * 0.78, baseY + 4);
-      context.lineTo(centerX + direction * spread, baseY + 15);
-      context.stroke();
-    };
-
-    drawBranch(-1);
-    drawBranch(1);
-
-    // The date is hidden as tiny fracture ticks, not readable title text.
-    if (progress > 0.56) {
-      context.globalAlpha = 0.14;
-      context.strokeStyle = "#f0fbff";
-      context.lineWidth = 0.8;
-      const marks = [1, 7, 0, 3, 2, 0, 2, 6];
-      marks.forEach((digit, index) => {
-        const x = centerX - 35 + index * 10;
-        const height = 3 + (digit % 4) * 1.5;
-        context.beginPath();
-        context.moveTo(x, baseY - 3);
-        context.lineTo(x + (digit % 2 ? 2 : -2), baseY - 3 - height);
-        context.stroke();
-      });
-    }
-
-    context.restore();
-  }
-
-  function renderSurface() {
-    drawSurfaceSky();
-    drawSnow();
-    drawIceSurface();
-
-    const kissProgress = sceneProgress("kiss");
-    const sceneProgressValue = inverseLerp(0, 6, state.time);
-    const approach = smootherstep(inverseLerp(0.8, 4.2, state.time));
-    const lean = smootherstep(inverseLerp(4.0, 8.0, state.time));
-
-    const leftStart = state.width * 0.39;
-    const rightStart = state.width * 0.61;
-    const leftEnd = state.width * 0.475;
-    const rightEnd = state.width * 0.525;
-    const leftX = lerp(leftStart, leftEnd, approach);
-    const rightX = lerp(rightStart, rightEnd, approach);
-    const groundY = state.height * 0.66;
-    const scale = clamp(Math.min(state.width / 390, state.height / 780), 0.88, 1.28);
-
-    const slowMotion = sceneIsActive("kiss") ? Math.sin(kissProgress * Math.PI) : 0;
-    const headLean = lerp(0, 0.19, lean);
-
-    drawBreath(leftX + 20 * scale, groundY - 31 * scale, 1, 1 - slowMotion * 0.65);
-    drawBreath(rightX - 20 * scale, groundY - 31 * scale, -1, 1 - slowMotion * 0.65);
-
-    drawPenguin(
-      leftX,
-      groundY,
-      1.08 * scale,
-      1,
-      headLean,
-      fract(state.time * 0.21)
-    );
-    drawPenguin(
-      rightX,
-      groundY,
-      1.08 * scale,
-      -1,
-      headLean,
-      fract(state.time * 0.19 + 0.36)
-    );
-
-    if (state.time >= 6.25) {
-      drawDateCrack(inverseLerp(6.25, 10, state.time), kissProgress > 0.74);
-    }
-
-    if (sceneIsActive("kiss")) {
-      context.save();
-      const glow = context.createRadialGradient(
-        state.width * 0.5,
-        groundY - 35 * scale,
-        0,
-        state.width * 0.5,
-        groundY - 35 * scale,
-        state.width * 0.35
-      );
-      glow.addColorStop(0, `rgba(255,255,255,${0.09 + slowMotion * 0.08})`);
-      glow.addColorStop(1, "rgba(255,255,255,0)");
-      context.fillStyle = glow;
-      context.fillRect(0, 0, state.width, state.height);
-      context.restore();
-    }
-
-    drawVignette(0.24 + sceneProgressValue * 0.05);
-  }
-
-  function renderEnterIce() {
-    const progress = sceneProgress("enterIce");
-    const eased = easeInCubic(progress);
-
-    drawVerticalGradient("#adcfe1", "#06111d");
-
-    const openingWidth = lerp(state.width * 0.75, state.width * 0.11, eased);
-    const openingHeight = lerp(state.height * 0.22, state.height * 0.045, eased);
-    const openingY = lerp(state.height * 0.5, state.height * 0.08, eased);
-
-    const light = context.createRadialGradient(
-      state.width * 0.5,
-      openingY,
-      0,
-      state.width * 0.5,
-      openingY,
-      openingWidth
-    );
-    light.addColorStop(0, "rgba(238,250,255,0.95)");
-    light.addColorStop(0.3, "rgba(171,222,249,0.48)");
-    light.addColorStop(1, "rgba(171,222,249,0)");
-    context.fillStyle = light;
-    context.beginPath();
-    context.ellipse(
-      state.width * 0.5,
-      openingY,
-      openingWidth,
-      openingHeight,
+  function beginVirtual() {
+    ctx.setTransform(
+      state.dpr * state.scale,
       0,
       0,
-      Math.PI * 2
+      state.dpr * state.scale,
+      state.dpr * state.offsetX,
+      state.dpr * state.offsetY
     );
-    context.fill();
-
-    context.save();
-    context.strokeStyle = "rgba(224,246,255,0.22)";
-    context.lineWidth = 1.3;
-    for (let streak = 0; streak < 20; streak += 1) {
-      const x = fract(streak * 0.173 + state.time * 0.09) * state.width;
-      const y = fract(streak * 0.119 + progress * 1.8) * state.height;
-      context.beginPath();
-      context.moveTo(x, y - 18);
-      context.lineTo(x + (x - state.width * 0.5) * 0.08, y + 46);
-      context.stroke();
-    }
-    context.restore();
-
-    const frame = context.createRadialGradient(
-      state.width * 0.5,
-      state.height * 0.42,
-      state.width * 0.06,
-      state.width * 0.5,
-      state.height * 0.42,
-      Math.max(state.width, state.height) * 0.72
-    );
-    frame.addColorStop(0, "rgba(10,31,50,0)");
-    frame.addColorStop(0.48, "rgba(9,26,43,0.22)");
-    frame.addColorStop(1, `rgba(1,5,10,${0.75 + progress * 0.2})`);
-    context.fillStyle = frame;
-    context.fillRect(0, 0, state.width, state.height);
   }
 
-  function descentPalette(progress) {
-    const stops = [
-      { at: 0, ice: [225, 246, 255], edge: [169, 224, 248], dark: [40, 83, 112] },
-      { at: 0.22, ice: [157, 228, 255], edge: [80, 182, 232], dark: [18, 68, 108] },
-      { at: 0.46, ice: [70, 161, 226], edge: [35, 111, 186], dark: [9, 39, 78] },
-      { at: 0.7, ice: [34, 94, 168], edge: [18, 65, 127], dark: [4, 20, 48] },
-      { at: 1, ice: [9, 39, 84], edge: [6, 29, 65], dark: [1, 8, 23] },
-    ];
-
-    for (let index = 0; index < stops.length - 1; index += 1) {
-      const current = stops[index];
-      const next = stops[index + 1];
-      if (progress >= current.at && progress <= next.at) {
-        const local = inverseLerp(current.at, next.at, progress);
-        return {
-          ice: mixColor(current.ice, next.ice, local),
-          edge: mixColor(current.edge, next.edge, local),
-          dark: mixColor(current.dark, next.dark, local),
-        };
-      }
-    }
-
-    return stops[stops.length - 1];
+  function fmt(t) {
+    const m = Math.floor(t / 60);
+    const s = Math.floor(t % 60).toString().padStart(2, "0");
+    return `${m}:${s}`;
   }
 
-  function descentVelocity(seconds, progress) {
-    const stageBoost =
-      progress < 0.18
-        ? 0.72
-        : progress < 0.4
-        ? 1.0
-        : progress < 0.68
-        ? 1.24
-        : progress < 0.86
-        ? 1.48
-        : 1.78;
-    const tempo = 1 + Math.sin(seconds * 0.22) * 0.13 + Math.sin(seconds * 0.071) * 0.08;
-    return stageBoost * tempo;
-  }
-
-  function crackPulseData(seconds, progress) {
-    const interval = lerp(8.2, 4.4, progress);
-    const index = Math.floor(seconds / interval);
-    const local = fract(seconds / interval);
-    const intensity = pulse(local, 0.03, 0.58, 0.98) * lerp(0.28, 1, progress);
-    return { interval, index, local, intensity };
-  }
-
-  function drawSolidTunnel(seconds, progress, palette) {
-    const velocity = descentVelocity(seconds, progress);
-    const travel = seconds * 0.048 * velocity;
-    const centerDriftX =
-      Math.sin(seconds * 0.19) * state.width * 0.045 +
-      Math.sin(seconds * 0.053) * state.width * 0.07;
-    const centerDriftY = Math.sin(seconds * 0.11) * state.height * 0.025;
-    const maxRadius = Math.hypot(state.width, state.height);
-
-    const visibleSlabs = slabShapes
-      .map((shape, index) => {
-        const phase = fract(index / slabShapes.length + travel);
-        return { shape, index, phase };
-      })
-      .sort((a, b) => a.phase - b.phase);
-
-    for (const slab of visibleSlabs) {
-      const depth = smootherstep(slab.phase);
-      const innerRadius = lerp(26, maxRadius * 1.18, depth);
-      const thickness = innerRadius * slab.shape.thickness;
-      const centerX =
-        state.width * 0.5 +
-        centerDriftX * (1 - depth * 0.55) +
-        slab.shape.offsetX * state.width * (0.34 + depth * 0.18);
-      const centerY =
-        state.height * 0.45 +
-        centerDriftY * (1 - depth * 0.5) +
-        slab.shape.offsetY * state.height * (0.24 + depth * 0.12);
-      const alpha = clamp(0.24 + depth * 0.76);
-      const slabLight = mixColor(palette.ice, palette.edge, slab.index % 3 === 0 ? 0.36 : 0.12);
-      const slabDark = mixColor(palette.dark, palette.edge, 0.2);
-
-      const gradient = context.createRadialGradient(
-        centerX - innerRadius * 0.2,
-        centerY - innerRadius * 0.26,
-        innerRadius * 0.12,
-        centerX,
-        centerY,
-        innerRadius + thickness * 2.4
-      );
-      gradient.addColorStop(0, rgba(slabLight, 0.2 + alpha * 0.22));
-      gradient.addColorStop(0.72, rgba(slabLight, 0.54 + alpha * 0.28));
-      gradient.addColorStop(1, rgba(slabDark, 0.88));
-
-      context.save();
-      context.translate(centerX, centerY);
-      context.rotate(slab.shape.rotation + Math.sin(seconds * 0.05 + slab.index) * 0.025);
-      context.translate(-centerX, -centerY);
-
-      const ringPath = new Path2D();
-      ringPath.rect(-maxRadius, -maxRadius, maxRadius * 2, maxRadius * 2);
-      for (let pointIndex = slab.shape.points.length - 1; pointIndex >= 0; pointIndex -= 1) {
-        const point = slab.shape.points[pointIndex];
-        const radius = innerRadius * point.roughness;
-        const x = centerX + Math.cos(point.angle) * radius;
-        const y = centerY + Math.sin(point.angle) * radius * 0.74;
-        if (pointIndex === slab.shape.points.length - 1) ringPath.moveTo(x, y);
-        else ringPath.lineTo(x, y);
-      }
-      ringPath.closePath();
-
-      context.fillStyle = gradient;
-      context.fill(ringPath, "evenodd");
-
-      context.strokeStyle = rgba(palette.ice, 0.11 + alpha * 0.28);
-      context.lineWidth = Math.max(1.2, thickness * 0.17);
-      context.shadowBlur = Math.min(18, thickness * 0.25);
-      context.shadowColor = rgba(palette.edge, 0.24);
-      context.beginPath();
-      slab.shape.points.forEach((point, pointIndex) => {
-        const radius = innerRadius * point.roughness;
-        const x = centerX + Math.cos(point.angle) * radius;
-        const y = centerY + Math.sin(point.angle) * radius * 0.74;
-        if (pointIndex === 0) context.moveTo(x, y);
-        else context.lineTo(x, y);
-      });
-      context.closePath();
-      context.stroke();
-
-      // Compression bands make the surfaces read as solid ice.
-      context.shadowBlur = 0;
-      context.globalAlpha = (1 - depth) * 0.16 + 0.04;
-      context.strokeStyle = rgba(palette.dark, 0.55);
-      context.lineWidth = 1;
-      for (let band = 0; band < 3; band += 1) {
-        const bandRadius = innerRadius + thickness * (0.28 + band * 0.28);
-        context.beginPath();
-        context.ellipse(centerX, centerY, bandRadius, bandRadius * 0.74, 0, 0, Math.PI * 2);
-        context.stroke();
-      }
-
-      context.restore();
-    }
-  }
-
-  function drawSurfaceLightDuringDescent(progress) {
-    const visibility = Math.pow(1 - progress, 2.1);
-    if (visibility <= 0.005) return;
-
-    const radius = lerp(state.width * 0.48, state.width * 0.08, smoothstep(progress * 1.4));
-    const gradient = context.createRadialGradient(
-      state.width * 0.5,
-      state.height * 0.03,
-      0,
-      state.width * 0.5,
-      state.height * 0.03,
-      radius * 2.4
-    );
-    gradient.addColorStop(0, `rgba(235,250,255,${visibility * 0.66})`);
-    gradient.addColorStop(0.32, `rgba(154,221,255,${visibility * 0.23})`);
-    gradient.addColorStop(1, "rgba(154,221,255,0)");
-    context.fillStyle = gradient;
-    context.fillRect(0, 0, state.width, state.height * 0.62);
-  }
-
-  function drawTrappedBubbles(seconds, progress) {
-    const amount = clamp(1 - progress * 1.35);
-    if (amount <= 0) return;
-
-    context.save();
-    context.strokeStyle = "rgba(238,250,255,0.25)";
-    context.lineWidth = 1;
-    for (let index = 0; index < 28; index += 1) {
-      const pseudo = fract(index * 0.61803398875);
-      const x = fract(pseudo + seconds * 0.006 * (index % 2 ? 1 : -1)) * state.width;
-      const y = fract(index * 0.277 + seconds * 0.011) * state.height;
-      const radius = 1.5 + (index % 5) * 1.1;
-      context.globalAlpha = amount * (0.08 + (index % 4) * 0.035);
-      context.beginPath();
-      context.arc(x, y, radius, 0, Math.PI * 2);
-      context.stroke();
-    }
-    context.restore();
-  }
-
-  function createCrackPath(seed, fierce) {
-    const crackRandom = mulberry32(seed * 917 + 73);
-    const points = [];
-    let x = state.width * (0.32 + crackRandom() * 0.36);
-    let y = -20;
-    points.push({ x, y });
-    const segmentCount = fierce ? 15 : 11;
-    for (let segment = 1; segment < segmentCount; segment += 1) {
-      x += (crackRandom() - 0.5) * state.width * (fierce ? 0.22 : 0.17);
-      x = clamp(x, state.width * 0.05, state.width * 0.95);
-      y += state.height / (segmentCount - 1) * (0.72 + crackRandom() * 0.48);
-      points.push({ x, y });
-    }
-    return points;
-  }
-
-  function drawHuntingCracks(seconds, progress) {
-    const pulseData = crackPulseData(seconds, progress);
-    const fierce = progress > 0.47;
-    const points = createCrackPath(pulseData.index, fierce);
-    const visibleSegments = Math.max(1, Math.floor((points.length - 1) * easeOutCubic(pulseData.local)));
-    const finalFraction = fract((points.length - 1) * easeOutCubic(pulseData.local));
-
-    context.save();
-    context.lineCap = "round";
-    context.lineJoin = "round";
-    context.strokeStyle = `rgba(173,229,255,${0.34 + pulseData.intensity * 0.54})`;
-    context.lineWidth = lerp(1.25, 3.1, progress);
-    context.shadowBlur = lerp(8, 23, pulseData.intensity);
-    context.shadowColor = "rgba(91,192,255,0.9)";
-    context.beginPath();
-    context.moveTo(points[0].x, points[0].y);
-    for (let index = 1; index <= visibleSegments; index += 1) {
-      const point = points[index];
-      context.lineTo(point.x, point.y);
-    }
-    if (visibleSegments < points.length - 1) {
-      const from = points[visibleSegments];
-      const to = points[visibleSegments + 1];
-      context.lineTo(
-        lerp(from.x, to.x, finalFraction),
-        lerp(from.y, to.y, finalFraction)
-      );
-    }
-    context.stroke();
-
-    // Secondary branches make the fracture hunt instead of reading as one overlay line.
-    const branchCount = Math.floor(lerp(1, 5, progress));
-    for (let branch = 0; branch < branchCount; branch += 1) {
-      const anchorIndex = Math.min(
-        visibleSegments,
-        2 + ((branch * 3 + pulseData.index) % Math.max(3, points.length - 3))
-      );
-      const anchor = points[anchorIndex];
-      const branchRandom = mulberry32(pulseData.index * 101 + branch * 29);
-      context.globalAlpha = 0.32 + pulseData.intensity * 0.42;
-      context.beginPath();
-      context.moveTo(anchor.x, anchor.y);
-      context.lineTo(
-        anchor.x + (branchRandom() - 0.5) * state.width * 0.23,
-        anchor.y + (0.06 + branchRandom() * 0.14) * state.height
-      );
-      context.lineTo(
-        anchor.x + (branchRandom() - 0.5) * state.width * 0.31,
-        anchor.y + (0.15 + branchRandom() * 0.18) * state.height
-      );
-      context.stroke();
-    }
-
-    context.restore();
-
-    if (!REDUCED_MOTION && pulseData.local > 0.54 && pulseData.local < 0.64) {
-      const flash = Math.sin(inverseLerp(0.54, 0.64, pulseData.local) * Math.PI);
-      context.fillStyle = `rgba(151,220,255,${flash * lerp(0.025, 0.12, progress)})`;
-      context.fillRect(0, 0, state.width, state.height);
-    }
-
-    return pulseData;
-  }
-
-  function drawMovingParticles(seconds, progress) {
-    context.save();
-    for (const particle of suspendedParticles) {
-      const direction = particle.x > 0.5 ? -1 : 1;
-      const x =
-        fract(particle.x + seconds * 0.004 * direction * particle.speed) *
-        state.width;
-      const y = fract(particle.y + seconds * 0.012 * particle.speed) * state.height;
-      context.globalAlpha = lerp(0.06, 0.17, progress) * particle.speed;
-      context.fillStyle = "#d9f2ff";
-      context.beginPath();
-      context.arc(
-        x + Math.sin(seconds + particle.phase) * 9,
-        y,
-        particle.radius,
-        0,
-        Math.PI * 2
-      );
-      context.fill();
-    }
-    context.restore();
-  }
-
-  function drawIcePhrase(seconds, progress) {
-    const phrase = PHRASES.find((item) => seconds >= item.start && seconds <= item.end);
-    if (!phrase) return;
-
-    const local = inverseLerp(phrase.start, phrase.end, seconds);
-    const alpha = Math.sin(local * Math.PI);
-    const sideX = phrase.side < 0 ? state.width * 0.28 : state.width * 0.72;
-    const passScale = lerp(0.72, 1.45, smootherstep(local));
-    const y = lerp(state.height * 0.28, state.height * 0.7, smootherstep(local));
-
-    context.save();
-    context.translate(sideX, y);
-    context.rotate(phrase.tilt + Math.sin(seconds * 0.18) * 0.015);
-    context.scale(passScale, passScale * 0.96);
-    context.textAlign = "center";
-    context.textBaseline = "middle";
-    context.font = `${Math.max(19, state.width * 0.055)}px Georgia, serif`;
-    context.fillStyle = `rgba(231,246,255,${alpha * 0.64})`;
-    context.shadowColor = `rgba(125,208,255,${alpha * 0.36})`;
-    context.shadowBlur = 12;
-    context.fillText(phrase.text, 0, 0);
-
-    // A refracted duplicate makes the words feel inside the ice surface.
-    context.globalAlpha = alpha * 0.12;
-    context.scale(1.03, 1.1);
-    context.fillText(phrase.text, 2, 5);
-    context.restore();
-  }
-
-  function drawTinyLlama(x, y, scale, direction) {
-    context.save();
-    context.translate(x, y);
-    context.scale(scale * direction, scale);
-    context.fillStyle = "rgba(225,235,241,0.88)";
-    context.fillRect(-8, -6, 15, 8);
-    context.fillRect(4, -14, 5, 10);
-    context.fillRect(-5, 2, 2, 8);
-    context.fillRect(1, 2, 2, 8);
-    context.fillRect(6, 2, 2, 8);
-    context.beginPath();
-    context.moveTo(5, -14);
-    context.lineTo(6, -19);
-    context.lineTo(8, -14);
-    context.moveTo(8, -14);
-    context.lineTo(10, -18);
-    context.lineTo(11, -13);
-    context.fill();
-    context.restore();
-  }
-
-  function drawLibraryGlimpse(seconds) {
-    const start = 68.1;
-    const end = 69.35;
-    if (seconds < start || seconds > end) return;
-
-    const local = inverseLerp(start, end, seconds);
-    const alpha = Math.sin(local * Math.PI);
-    const rush = lerp(state.width * 0.7, -state.width * 0.34, smootherstep(local));
-
-    context.save();
-    context.globalAlpha = alpha * 0.92;
-    context.translate(rush, 0);
-    context.transform(1, -0.08, -0.18, 1, 0, 0);
-
-    const chamberX = state.width * 0.28;
-    const chamberY = state.height * 0.16;
-    const chamberWidth = state.width * 0.88;
-    const chamberHeight = state.height * 0.72;
-
-    const clip = new Path2D();
-    clip.moveTo(chamberX, chamberY + chamberHeight);
-    clip.lineTo(chamberX, chamberY + chamberHeight * 0.34);
-    clip.quadraticCurveTo(
-      chamberX + chamberWidth * 0.5,
-      chamberY - chamberHeight * 0.08,
-      chamberX + chamberWidth,
-      chamberY + chamberHeight * 0.34
-    );
-    clip.lineTo(chamberX + chamberWidth, chamberY + chamberHeight);
-    clip.closePath();
-    context.clip(clip);
-
-    const chamberGradient = context.createLinearGradient(
-      chamberX,
-      chamberY,
-      chamberX + chamberWidth,
-      chamberY + chamberHeight
-    );
-    chamberGradient.addColorStop(0, "rgba(8,21,34,0.96)");
-    chamberGradient.addColorStop(0.5, "rgba(28,66,96,0.85)");
-    chamberGradient.addColorStop(1, "rgba(2,8,14,0.98)");
-    context.fillStyle = chamberGradient;
-    context.fillRect(chamberX, chamberY, chamberWidth, chamberHeight);
-
-    // Central aisle and distant arch.
-    context.strokeStyle = "rgba(190,225,244,0.2)";
-    context.lineWidth = 3;
-    context.beginPath();
-    context.moveTo(chamberX + chamberWidth * 0.5, chamberY + chamberHeight);
-    context.lineTo(chamberX + chamberWidth * 0.5, chamberY + chamberHeight * 0.25);
-    context.stroke();
-    context.beginPath();
-    context.ellipse(
-      chamberX + chamberWidth * 0.5,
-      chamberY + chamberHeight * 0.31,
-      chamberWidth * 0.12,
-      chamberHeight * 0.17,
-      0,
-      Math.PI,
-      0
-    );
-    context.stroke();
-
-    // Shelf walls.
-    for (let side = 0; side < 2; side += 1) {
-      const shelfX = side === 0 ? chamberX + chamberWidth * 0.06 : chamberX + chamberWidth * 0.67;
-      for (let shelf = 0; shelf < 4; shelf += 1) {
-        const shelfY = chamberY + chamberHeight * (0.36 + shelf * 0.13);
-        context.fillStyle = "rgba(9,15,23,0.9)";
-        context.fillRect(shelfX, shelfY, chamberWidth * 0.27, chamberHeight * 0.09);
-        context.fillStyle = "rgba(190,214,228,0.08)";
-        context.fillRect(shelfX, shelfY, chamberWidth * 0.27, 2);
-        for (let book = 0; book < 9; book += 1) {
-          context.fillStyle = `rgba(${35 + book * 5},${47 + book * 4},${61 + book * 4},0.82)`;
-          context.fillRect(
-            shelfX + 8 + book * (chamberWidth * 0.026),
-            shelfY + 9,
-            chamberWidth * 0.017,
-            chamberHeight * (0.035 + (book % 3) * 0.008)
-          );
-        }
-      }
-    }
-
-    // Tiny llamas: deliberately replay-sized.
-    drawTinyLlama(
-      chamberX + chamberWidth * 0.755,
-      chamberY + chamberHeight * 0.575,
-      0.65,
-      1
-    );
-    drawTinyLlama(
-      chamberX + chamberWidth * 0.79,
-      chamberY + chamberHeight * 0.578,
-      0.62,
-      -1
-    );
-
-    // A few pages flash across the chamber.
-    context.fillStyle = "rgba(236,244,249,0.3)";
-    for (const page of pages) {
-      context.save();
-      context.translate(
-        chamberX + page.x * chamberWidth,
-        chamberY + page.y * chamberHeight
-      );
-      context.rotate(page.rotation + seconds * page.spin);
-      context.fillRect(-7, -4, 14, 8);
-      context.restore();
-    }
-
-    context.restore();
-
-    // Strong lateral streaks keep the library a one-second drive-by, not a scene.
-    context.save();
-    context.globalAlpha = alpha * 0.2;
-    context.strokeStyle = "#d9f4ff";
-    for (let line = 0; line < 12; line += 1) {
-      const y = (line / 11) * state.height;
-      context.beginPath();
-      context.moveTo(0, y);
-      context.lineTo(state.width, y + 14);
-      context.stroke();
-    }
-    context.restore();
-  }
-
-  function drawSeedEasterEgg(seconds) {
-    const start = 108;
-    const end = 115;
-    if (seconds < start || seconds > end) return;
-
-    const local = inverseLerp(start, end, seconds);
-    const pulsePosition = local * 8;
-    const pulseNumber = Math.floor(pulsePosition);
-    const pulseAmount = Math.sin(fract(pulsePosition) * Math.PI);
-    const alpha = Math.sin(local * Math.PI);
-    const x = state.width * 0.72;
-    const y = state.height * 0.42;
-
-    context.save();
-    context.globalAlpha = alpha;
-    const glowRadius = 18 + pulseAmount * 21;
-    const glow = context.createRadialGradient(x, y, 0, x, y, glowRadius * 2.4);
-    glow.addColorStop(0, "rgba(244,255,194,0.96)");
-    glow.addColorStop(0.23, "rgba(159,242,178,0.42)");
-    glow.addColorStop(1, "rgba(109,211,255,0)");
-    context.fillStyle = glow;
-    context.beginPath();
-    context.arc(x, y, glowRadius * 2.4, 0, Math.PI * 2);
-    context.fill();
-
-    context.fillStyle = "rgba(245,255,213,0.94)";
-    context.beginPath();
-    context.ellipse(x, y, 7, 12, 0.28, 0, Math.PI * 2);
-    context.fill();
-
-    context.globalAlpha = alpha * 0.14;
-    context.strokeStyle = "rgba(222,251,255,0.9)";
-    for (let ring = 0; ring <= Math.min(7, pulseNumber); ring += 1) {
-      context.beginPath();
-      context.arc(x, y, 22 + ring * 8, 0, Math.PI * 2);
-      context.stroke();
-    }
-    context.restore();
-  }
-
-  function renderDescent() {
-    const seconds = state.time - TIMELINE.descent[0];
-    const progress = clamp(seconds / DESCENT_DURATION);
-    const palette = descentPalette(progress);
-    const pulseData = crackPulseData(seconds, progress);
-    const shake = REDUCED_MOTION ? 0 : pulseData.intensity * lerp(1.3, 5.6, progress);
-    const roll = REDUCED_MOTION
-      ? 0
-      : Math.sin(seconds * 0.17) * lerp(0.006, 0.028, progress) +
-        Math.sin(seconds * 0.47) * 0.006;
-
-    drawVerticalGradient(rgba(palette.dark), rgba(mixColor(palette.dark, [0, 2, 8], 0.58)));
-
-    context.save();
-    context.translate(
-      state.width * 0.5 + Math.sin(seconds * 17.3) * shake,
-      state.height * 0.5 + Math.cos(seconds * 14.1) * shake
-    );
-    context.rotate(roll);
-    context.translate(-state.width * 0.5, -state.height * 0.5);
-
-    drawSolidTunnel(seconds, progress, palette);
-    drawSurfaceLightDuringDescent(progress);
-    drawTrappedBubbles(seconds, progress);
-    drawMovingParticles(seconds, progress);
-    drawIcePhrase(seconds, progress);
-    drawSeedEasterEgg(seconds);
-    drawLibraryGlimpse(seconds);
-    drawHuntingCracks(seconds, progress);
-
-    context.restore();
-
-    // The light changes smoothly from pale blue to near-black over the 133-second fall.
-    const darkness = smoothstep(inverseLerp(0.62, 1, progress));
-    context.fillStyle = `rgba(0,4,12,${darkness * 0.27})`;
-    context.fillRect(0, 0, state.width, state.height);
-    drawVignette(lerp(0.3, 0.78, progress));
-  }
-
-  function drawIcebergUnderside(lightAmount = 1, crackAmount = 0) {
-    drawVerticalGradient("#03101d", "#000207");
-
-    const beam = context.createLinearGradient(0, 0, 0, state.height);
-    beam.addColorStop(0, `rgba(127,208,255,${0.34 * lightAmount})`);
-    beam.addColorStop(0.48, `rgba(76,150,209,${0.1 * lightAmount})`);
-    beam.addColorStop(1, "rgba(20,66,100,0)");
-    context.fillStyle = beam;
-    context.beginPath();
-    context.moveTo(state.width * 0.37, 0);
-    context.lineTo(state.width * 0.63, 0);
-    context.lineTo(state.width * 0.77, state.height);
-    context.lineTo(state.width * 0.23, state.height);
-    context.closePath();
-    context.fill();
-
-    const undersideGradient = context.createLinearGradient(0, 0, 0, state.height * 0.44);
-    undersideGradient.addColorStop(0, "#2e78a8");
-    undersideGradient.addColorStop(0.22, "#18517b");
-    undersideGradient.addColorStop(0.62, "#0a2b48");
-    undersideGradient.addColorStop(1, "#03111e");
-    context.fillStyle = undersideGradient;
-    context.beginPath();
-    context.moveTo(-20, -10);
-    context.lineTo(state.width + 20, -10);
-    context.lineTo(state.width * 0.94, state.height * 0.2);
-    context.lineTo(state.width * 0.81, state.height * 0.29);
-    context.lineTo(state.width * 0.72, state.height * 0.25);
-    context.lineTo(state.width * 0.62, state.height * 0.38);
-    context.lineTo(state.width * 0.52, state.height * 0.31);
-    context.lineTo(state.width * 0.39, state.height * 0.42);
-    context.lineTo(state.width * 0.3, state.height * 0.29);
-    context.lineTo(state.width * 0.17, state.height * 0.34);
-    context.lineTo(state.width * 0.04, state.height * 0.22);
-    context.closePath();
-    context.fill();
-
-    context.save();
-    context.globalAlpha = 0.16;
-    context.strokeStyle = "#b8e8ff";
-    for (let ridge = 0; ridge < 9; ridge += 1) {
-      const y = state.height * (0.04 + ridge * 0.035);
-      context.beginPath();
-      context.moveTo(-10, y);
-      context.bezierCurveTo(
-        state.width * 0.32,
-        y + 18,
-        state.width * 0.68,
-        y - 16,
-        state.width + 10,
-        y + 6
-      );
-      context.stroke();
-    }
-    context.restore();
-
-    if (crackAmount > 0) {
-      context.save();
-      context.lineCap = "round";
-      context.lineJoin = "round";
-      context.strokeStyle = `rgba(154,226,255,${0.3 + crackAmount * 0.66})`;
-      context.lineWidth = 2.6;
-      context.shadowBlur = 20;
-      context.shadowColor = "rgba(90,203,255,0.9)";
-      const centerX = state.width * 0.51;
-      const centerY = state.height * 0.25;
-      for (let branch = 0; branch < 5; branch += 1) {
-        const angle = -Math.PI * 0.94 + branch * (Math.PI * 0.47);
-        const length = state.width * (0.22 + branch % 2 * 0.08) * easeOutCubic(crackAmount);
-        context.beginPath();
-        context.moveTo(centerX, centerY);
-        context.lineTo(
-          centerX + Math.cos(angle) * length * 0.43,
-          centerY + Math.sin(angle) * length * 0.26
-        );
-        context.lineTo(
-          centerX + Math.cos(angle + 0.15) * length * 0.72,
-          centerY + Math.sin(angle + 0.15) * length * 0.4
-        );
-        context.lineTo(
-          centerX + Math.cos(angle - 0.1) * length,
-          centerY + Math.sin(angle - 0.1) * length * 0.54
-        );
-        context.stroke();
-      }
-      context.restore();
-    }
-
-    context.save();
-    for (const particle of suspendedParticles.slice(0, 42)) {
-      context.globalAlpha = 0.08 + particle.speed * 0.12;
-      context.fillStyle = "#dff6ff";
-      context.beginPath();
-      context.arc(
-        particle.x * state.width,
-        particle.y * state.height,
-        particle.radius * 0.72,
-        0,
-        Math.PI * 2
-      );
-      context.fill();
-    }
-    context.restore();
-
-    drawVignette(0.62);
-  }
-
-  function renderBottomReveal() {
-    const progress = sceneProgress("bottomReveal");
-    drawIcebergUnderside(easeOutCubic(progress), 0);
-
-    // The camera settles after the long fall so the scale can land cleanly.
-    context.fillStyle = `rgba(0,2,7,${(1 - progress) * 0.52})`;
-    context.fillRect(0, 0, state.width, state.height);
-  }
-
-  function renderConvergence() {
-    const progress = sceneProgress("convergence");
-    drawIcebergUnderside(1 - progress * 0.18, progress);
-
-    if (!REDUCED_MOTION) {
-      const tremor = Math.sin(progress * Math.PI * 14) * progress * 1.3;
-      context.save();
-      context.globalAlpha = progress * 0.07;
-      context.fillStyle = "#b6eaff";
-      context.fillRect(tremor, 0, state.width, state.height);
-      context.restore();
-    }
-  }
-
-  function renderShatter() {
-    const progress = sceneProgress("shatter");
-    drawVerticalGradient("#06111d", "#000106");
-
-    const pieces = [
-      { x: 0.2, y: 0.12, w: 0.48, h: 0.28, rotation: -0.16, fall: 0.78 },
-      { x: 0.63, y: 0.08, w: 0.42, h: 0.34, rotation: 0.19, fall: 0.94 },
-      { x: 0.46, y: 0.18, w: 0.3, h: 0.24, rotation: -0.04, fall: 1.14 },
-    ];
-
-    for (const piece of pieces) {
-      const fall = easeInCubic(progress) * state.height * piece.fall;
-      context.save();
-      context.translate(piece.x * state.width, piece.y * state.height + fall);
-      context.rotate(piece.rotation + progress * piece.rotation * 1.4);
-      const gradient = context.createLinearGradient(0, 0, 0, piece.h * state.height);
-      gradient.addColorStop(0, "rgba(39,111,157,0.94)");
-      gradient.addColorStop(1, "rgba(6,25,43,0.98)");
-      context.fillStyle = gradient;
-      context.beginPath();
-      context.moveTo(-piece.w * state.width * 0.5, -piece.h * state.height * 0.5);
-      context.lineTo(piece.w * state.width * 0.46, -piece.h * state.height * 0.43);
-      context.lineTo(piece.w * state.width * 0.38, piece.h * state.height * 0.44);
-      context.lineTo(-piece.w * state.width * 0.42, piece.h * state.height * 0.5);
-      context.closePath();
-      context.fill();
-      context.strokeStyle = "rgba(166,226,255,0.24)";
-      context.lineWidth = 2;
-      context.stroke();
-      context.restore();
-    }
-
-    // One clean gap closes the blue light instead of random debris soup.
-    context.fillStyle = `rgba(0,0,0,${smoothstep(inverseLerp(0.52, 1, progress))})`;
-    context.fillRect(0, 0, state.width, state.height);
-  }
-
-  function renderDarkness() {
-    const progress = sceneProgress("darkness");
-    clear("#000000");
-
-    // Only a final shard glint remains, then true black.
-    const glint = 1 - smoothstep(inverseLerp(0, 0.5, progress));
-    if (glint > 0) {
-      context.save();
-      context.globalAlpha = glint * 0.18;
-      context.strokeStyle = "#c6edff";
-      context.beginPath();
-      context.moveTo(state.width * 0.14, state.height * 0.18);
-      context.lineTo(state.width * 0.24, state.height * 0.31);
-      context.stroke();
-      context.restore();
-    }
-  }
-
-  function drawGlowingFish(item, x, y, scale, alpha) {
-    const glowRadius = 24 * scale;
-    const glow = context.createRadialGradient(x, y, 0, x, y, glowRadius);
-    glow.addColorStop(0, `rgba(175,255,235,${0.82 * alpha})`);
-    glow.addColorStop(0.28, `rgba(90,220,255,${0.3 * alpha})`);
-    glow.addColorStop(1, "rgba(90,220,255,0)");
-    context.fillStyle = glow;
-    context.beginPath();
-    context.arc(x, y, glowRadius, 0, Math.PI * 2);
-    context.fill();
-
-    context.fillStyle = `rgba(217,255,245,${0.92 * alpha})`;
-    context.beginPath();
-    context.ellipse(x, y, 7.5 * scale, 4.2 * scale, 0, 0, Math.PI * 2);
-    context.fill();
-    context.beginPath();
-    context.moveTo(x - 7 * scale, y);
-    context.lineTo(x - 13 * scale, y - 5 * scale);
-    context.lineTo(x - 13 * scale, y + 5 * scale);
-    context.closePath();
-    context.fill();
-  }
-
-  function renderFish(showWhale = false, whaleProgress = 0) {
-    drawVerticalGradient("#010307", "#000001");
-    const fishProgress = sceneIsActive("fish") ? sceneProgress("fish") : 1;
-    const visibleCount = Math.max(1, Math.floor(lerp(1, fish.length, easeOutCubic(fishProgress))));
-
-    // The fish light the particles; the background does not simply fade up.
-    for (let index = 0; index < suspendedParticles.length; index += 1) {
-      const particle = suspendedParticles[index];
-      const alpha = 0.02 + fishProgress * 0.045 * particle.speed;
-      context.fillStyle = `rgba(172,229,242,${alpha})`;
-      context.beginPath();
-      context.arc(
-        particle.x * state.width,
-        particle.y * state.height,
-        particle.radius * 0.62,
-        0,
-        Math.PI * 2
-      );
-      context.fill();
-    }
-
-    let strongestFishX = state.width * 0.42;
-    let strongestFishY = state.height * 0.52;
-
-    for (let index = 0; index < visibleCount; index += 1) {
-      const item = fish[index];
-      const x =
-        fract(item.x + (state.time - TIMELINE.fish[0]) * item.speed * 0.08) *
-        (state.width + 80) -
-        40;
-      const y =
-        item.y * state.height +
-        Math.sin(state.time * 0.7 + item.phase) * state.height * 0.045;
-      const reveal = clamp((fishProgress * fish.length - index) / 2);
-      drawGlowingFish(item, x, y, item.scale, reveal);
-      if (index === 0) {
-        strongestFishX = x;
-        strongestFishY = y;
-      }
-    }
-
-    if (showWhale) {
-      const reveal = smoothstep(whaleProgress);
-      const whaleX = state.width * 0.56;
-      const whaleY = state.height * 0.57;
-      const whaleWidth = state.width * 0.88;
-      const whaleHeight = state.height * 0.24;
-
-      // Fish-driven reveal mask over a whale that was already present.
-      const revealGradient = context.createRadialGradient(
-        strongestFishX,
-        strongestFishY,
-        0,
-        strongestFishX,
-        strongestFishY,
-        Math.max(state.width, state.height) * (0.3 + reveal * 0.42)
-      );
-      revealGradient.addColorStop(0, `rgba(22,36,45,${0.94 * reveal})`);
-      revealGradient.addColorStop(0.45, `rgba(11,20,28,${0.7 * reveal})`);
-      revealGradient.addColorStop(1, "rgba(0,0,0,0)");
-
-      context.save();
-      context.globalCompositeOperation = "screen";
-      context.fillStyle = revealGradient;
-      context.beginPath();
-      context.ellipse(whaleX, whaleY, whaleWidth * 0.5, whaleHeight * 0.5, -0.08, 0, Math.PI * 2);
-      context.fill();
-      context.restore();
-
-      context.save();
-      context.globalAlpha = 0.18 + reveal * 0.62;
-      const whaleGradient = context.createLinearGradient(
-        whaleX - whaleWidth * 0.4,
-        whaleY - whaleHeight * 0.45,
-        whaleX + whaleWidth * 0.35,
-        whaleY + whaleHeight * 0.45
-      );
-      whaleGradient.addColorStop(0, "#182833");
-      whaleGradient.addColorStop(0.58, "#0a151d");
-      whaleGradient.addColorStop(1, "#03080d");
-      context.fillStyle = whaleGradient;
-      context.beginPath();
-      context.ellipse(whaleX, whaleY, whaleWidth * 0.5, whaleHeight * 0.5, -0.08, 0, Math.PI * 2);
-      context.fill();
-      context.beginPath();
-      context.moveTo(whaleX + whaleWidth * 0.42, whaleY - whaleHeight * 0.03);
-      context.lineTo(whaleX + whaleWidth * 0.59, whaleY - whaleHeight * 0.23);
-      context.lineTo(whaleX + whaleWidth * 0.56, whaleY + whaleHeight * 0.18);
-      context.closePath();
-      context.fill();
-
-      const eyeX = state.width * 0.34;
-      const eyeY = state.height * 0.54;
-      const eyeOpen = smoothstep(inverseLerp(0.44, 0.76, whaleProgress));
-      context.globalAlpha = reveal;
-      context.fillStyle = "rgba(139,184,207,0.25)";
-      context.beginPath();
-      context.ellipse(eyeX, eyeY, 18, 10 * eyeOpen, 0.02, 0, Math.PI * 2);
-      context.fill();
-      context.fillStyle = "#010205";
-      context.beginPath();
-      context.arc(eyeX, eyeY, 5.8 * eyeOpen, 0, Math.PI * 2);
-      context.fill();
-      context.restore();
-
-      if (state.time > 181.5 && state.time < 187.5) {
-        const phraseProgress = inverseLerp(181.5, 187.5, state.time);
-        context.save();
-        context.globalAlpha = Math.sin(phraseProgress * Math.PI) * 0.48;
-        context.fillStyle = "#d9f8ff";
-        context.font = `${Math.max(21, state.width * 0.06)}px Georgia, serif`;
-        context.textAlign = "center";
-        context.fillText(
-          "my forever...",
-          state.width * 0.54 + Math.sin(state.time * 0.5) * 8,
-          state.height * 0.77 - phraseProgress * 18
-        );
-        context.restore();
-      }
-    }
-
-    drawVignette(0.76);
-  }
-
-  function renderEye() {
-    const progress = sceneProgress("eye");
-    drawVerticalGradient("#010307", "#000000");
-
-    const eased = easeInOutCubic(progress);
-    const eyeX = lerp(state.width * 0.34, state.width * 0.5, eased);
-    const eyeY = lerp(state.height * 0.54, state.height * 0.5, eased);
-    const eyeWidth = lerp(34, state.width * 1.32, eased);
-    const eyeHeight = lerp(18, state.height * 0.76, eased);
-
-    context.save();
-    context.fillStyle = "#071018";
-    context.beginPath();
-    context.ellipse(
-      state.width * 0.58,
-      state.height * 0.58,
-      state.width * 0.64,
-      state.height * 0.22,
-      -0.07,
-      0,
-      Math.PI * 2
-    );
-    context.fill();
-
-    context.globalAlpha = 0.36 * (1 - progress * 0.55);
-    context.fillStyle = "#87aabd";
-    context.beginPath();
-    context.ellipse(eyeX, eyeY, eyeWidth, eyeHeight, 0.01, 0, Math.PI * 2);
-    context.fill();
-
-    if (progress < 0.54) {
-      context.globalAlpha = Math.sin(inverseLerp(0.05, 0.54, progress) * Math.PI) * 0.2;
-      context.fillStyle = "#e6f8ff";
-      context.font = `${Math.max(20, state.width * 0.052)}px Georgia, serif`;
-      context.textAlign = "center";
-      context.fillText("my forever love", eyeX, eyeY + 4);
-    }
-
-    const pupilRadius = lerp(7, Math.max(state.width, state.height) * 1.2, easeInCubic(progress));
-    context.globalAlpha = 1;
-    context.fillStyle = "#000000";
-    context.beginPath();
-    context.arc(eyeX, eyeY, pupilRadius, 0, Math.PI * 2);
-    context.fill();
-
-    // One natural eye reflection survives briefly; no portal ring.
-    if (progress < 0.34) {
-      context.fillStyle = `rgba(224,249,255,${1 - progress / 0.34})`;
-      context.beginPath();
-      context.arc(eyeX + eyeWidth * 0.2, eyeY - eyeHeight * 0.18, 2.2, 0, Math.PI * 2);
-      context.fill();
-    }
-    context.restore();
-
-    if (progress > 0.82) {
-      context.fillStyle = `rgba(0,0,0,${smoothstep(inverseLerp(0.82, 1, progress))})`;
-      context.fillRect(0, 0, state.width, state.height);
-    }
-  }
-
-  function render() {
-    if (state.width === 0 || state.height === 0) return;
-
-    if (sceneIsActive("surface") || sceneIsActive("kiss")) {
-      renderSurface();
-    } else if (sceneIsActive("enterIce")) {
-      renderEnterIce();
-    } else if (sceneIsActive("descent")) {
-      renderDescent();
-    } else if (sceneIsActive("bottomReveal")) {
-      renderBottomReveal();
-    } else if (sceneIsActive("convergence")) {
-      renderConvergence();
-    } else if (sceneIsActive("shatter")) {
-      renderShatter();
-    } else if (sceneIsActive("darkness")) {
-      renderDarkness();
-    } else if (sceneIsActive("fish")) {
-      renderFish(false, 0);
-    } else if (sceneIsActive("whale")) {
-      renderFish(true, sceneProgress("whale"));
-    } else if (sceneIsActive("eye")) {
-      renderEye();
-    } else {
-      clear("#000000");
-    }
-  }
-
-  function updateInterface() {
-    scrubber.value = String(state.time);
-    clock.textContent = `${formatTime(state.time)} / ${formatTime(TOTAL_DURATION)}`;
-  }
-
-  function pause() {
-    state.playing = false;
-    if (state.frameRequest) cancelAnimationFrame(state.frameRequest);
-    state.frameRequest = 0;
+  function updateUI() {
+    timeline.value = state.time.toFixed(2);
+    timeline.style.setProperty("--progress", `${(state.time / TOTAL) * 100}%`);
+    timeReadout.textContent = `${fmt(state.time)} / ${fmt(TOTAL)}`;
+    playPauseButton.textContent = state.playing ? "Pause" : "Play";
+    playPauseButton.setAttribute("aria-label", state.playing ? "Pause animation" : "Play animation");
   }
 
   function play() {
     if (state.playing) return;
-    if (state.time >= TOTAL_DURATION) state.time = 0;
     state.playing = true;
-    state.lastFrame = performance.now();
-    state.frameRequest = requestAnimationFrame(frame);
+    state.last = performance.now();
+    updateUI();
+    state.raf = requestAnimationFrame(tick);
   }
 
-  function restart() {
-    pause();
-    state.time = 0;
-    updateInterface();
-    render();
+  function pause() {
+    state.playing = false;
+    cancelAnimationFrame(state.raf);
+    updateUI();
   }
 
-  function frame(timestamp) {
+  function tick(now) {
     if (!state.playing) return;
-    const delta = Math.min(0.05, (timestamp - state.lastFrame) / 1000);
-    state.lastFrame = timestamp;
-    state.time = Math.min(TOTAL_DURATION, state.time + delta);
-    updateInterface();
-    render();
-
-    if (state.time >= TOTAL_DURATION) {
+    const dt = Math.min((now - state.last) / 1000, 0.05);
+    state.last = now;
+    state.time += dt;
+    if (state.time >= TOTAL) {
+      state.time = TOTAL;
       pause();
+    }
+    updateUI();
+    render();
+    if (state.playing) state.raf = requestAnimationFrame(tick);
+  }
+
+  function fillGradient(top, bottom) {
+    const g = ctx.createLinearGradient(0, 0, 0, VIEW.h);
+    g.addColorStop(0, top);
+    g.addColorStop(1, bottom);
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, VIEW.w, VIEW.h);
+  }
+
+  function depthProgress() {
+    if (state.time <= BEATS.revealScale[0]) return 0;
+    if (state.time >= BEATS.bottomHold[0]) return 1;
+    return smooth(inv(BEATS.revealScale[0], BEATS.bottomHold[0], state.time));
+  }
+
+  function cameraDepth() {
+    const p = depthProgress();
+    // Small natural surges make the camera feel observational, not like a scrolling webpage.
+    const surge = Math.sin(p * Math.PI * 5) * 85 + Math.sin(p * Math.PI * 11) * 24;
+    return p * 9300 + surge;
+  }
+
+  function iceEdge(worldY) {
+    const large = Math.sin(worldY * 0.00112) * 94;
+    const medium = Math.sin(worldY * 0.0038 + 1.7) * 42;
+    const detail = Math.sin(worldY * 0.011 + 0.4) * 18;
+    return 720 + large + medium + detail;
+  }
+
+  function iceColorAtDepth(p) {
+    const stops = [
+      [0.00, [221, 246, 255]],
+      [0.18, [172, 231, 253]],
+      [0.42, [77, 176, 226]],
+      [0.68, [22, 74, 136]],
+      [0.86, [8, 31, 71]],
+      [1.00, [3, 13, 32]],
+    ];
+    for (let i = 0; i < stops.length - 1; i++) {
+      const [aPos, a] = stops[i];
+      const [bPos, b] = stops[i + 1];
+      if (p <= bPos) {
+        const t = inv(aPos, bPos, p);
+        return [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)];
+      }
+    }
+    return stops.at(-1)[1];
+  }
+
+  function rgba(rgb, a = 1) {
+    return `rgba(${rgb[0] | 0},${rgb[1] | 0},${rgb[2] | 0},${a})`;
+  }
+
+  function drawOceanBackdrop(p) {
+    const upper = iceColorAtDepth(clamp(p * 0.88 + 0.08));
+    const lower = iceColorAtDepth(clamp(p * 1.04 + 0.18));
+    fillGradient(
+      rgba([upper[0] * 0.2, upper[1] * 0.31, upper[2] * 0.42], 1),
+      rgba([lower[0] * 0.08, lower[1] * 0.16, lower[2] * 0.28], 1)
+    );
+
+    ctx.save();
+    const beam = ctx.createLinearGradient(VIEW.w, 0, VIEW.w * 0.34, VIEW.h);
+    beam.addColorStop(0, `rgba(184,230,255,${lerp(0.18, 0.015, p)})`);
+    beam.addColorStop(0.5, `rgba(104,188,235,${lerp(0.08, 0.008, p)})`);
+    beam.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = beam;
+    ctx.fillRect(0, 0, VIEW.w, VIEW.h);
+
+    for (let i = 0; i < 80; i++) {
+      const x = hash(i + 9) * VIEW.w;
+      const y = (hash(i + 40) * VIEW.h + state.time * (6 + hash(i) * 12)) % VIEW.h;
+      const r = 0.8 + hash(i + 70) * 2.4;
+      ctx.globalAlpha = lerp(0.18, 0.04, p) * (0.4 + hash(i + 13));
+      ctx.fillStyle = "#d9f4ff";
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  function icebergPath(camY, bottomExtra = 1600) {
+    const path = new Path2D();
+    const topWorld = camY - 1300;
+    const bottomWorld = camY + VIEW.h + bottomExtra;
+    path.moveTo(-220, -300);
+    path.lineTo(iceEdge(topWorld), -300);
+    for (let sy = -300; sy <= VIEW.h + bottomExtra; sy += 34) {
+      const wy = camY + sy - 420;
+      path.lineTo(iceEdge(wy), sy);
+    }
+    path.lineTo(-220, VIEW.h + bottomExtra);
+    path.closePath();
+    return path;
+  }
+
+  function drawSolidIce(camY, p) {
+    const path = icebergPath(camY);
+    const base = iceColorAtDepth(p);
+
+    ctx.save();
+    ctx.clip(path);
+
+    const solid = ctx.createLinearGradient(0, 0, VIEW.w * 0.8, VIEW.h);
+    solid.addColorStop(0, rgba([Math.min(255, base[0] + 42), Math.min(255, base[1] + 38), Math.min(255, base[2] + 24)], 1));
+    solid.addColorStop(0.45, rgba(base, 1));
+    solid.addColorStop(1, rgba([base[0] * 0.4, base[1] * 0.55, base[2] * 0.73], 1));
+    ctx.fillStyle = solid;
+    ctx.fillRect(-100, -100, VIEW.w + 200, VIEW.h + 200);
+
+    // Dense age bands that stay attached to world-space.
+    for (let i = -8; i < 48; i++) {
+      const worldY = Math.floor((camY - 1500) / 210) * 210 + i * 210;
+      const sy = worldY - camY + 420;
+      const wobble = Math.sin(worldY * 0.003) * 35;
+      ctx.beginPath();
+      ctx.moveTo(-80, sy);
+      ctx.bezierCurveTo(230, sy - 30 + wobble, 470, sy + 44 - wobble, 920, sy + 12);
+      ctx.lineWidth = 18 + hash(i + 20) * 28;
+      ctx.strokeStyle = rgba([
+        Math.min(255, base[0] + 24),
+        Math.min(255, base[1] + 30),
+        Math.min(255, base[2] + 28),
+      ], 0.11 + hash(i + 3) * 0.11);
+      ctx.stroke();
+    }
+
+    // Internal solid facets.
+    for (let i = 0; i < 34; i++) {
+      const worldY = Math.floor((camY - 2200) / 360) * 360 + i * 360;
+      const sy = worldY - camY + 420;
+      const x = 80 + hash(i + 120) * 610;
+      const w = 140 + hash(i + 160) * 280;
+      const h = 90 + hash(i + 180) * 230;
+      ctx.save();
+      ctx.translate(x, sy);
+      ctx.rotate((hash(i + 210) - 0.5) * 0.18);
+      const facet = ctx.createLinearGradient(-w, -h, w, h);
+      facet.addColorStop(0, "rgba(244,253,255,0.11)");
+      facet.addColorStop(0.55, "rgba(114,190,230,0.035)");
+      facet.addColorStop(1, "rgba(0,25,62,0.09)");
+      ctx.fillStyle = facet;
+      ctx.beginPath();
+      ctx.moveTo(-w * 0.5, -h * 0.35);
+      ctx.lineTo(w * 0.48, -h * 0.5);
+      ctx.lineTo(w * 0.35, h * 0.48);
+      ctx.lineTo(-w * 0.6, h * 0.36);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // Trapped bubbles and sediment become rarer with depth.
+    const bubbleOpacity = lerp(0.28, 0.035, p);
+    for (let i = 0; i < 105; i++) {
+      const worldY = Math.floor((camY - 1800) / 90) * 90 + i * 90;
+      const sy = worldY - camY + 420;
+      const x = 70 + hash(i + 330) * 570;
+      const r = 2 + hash(i + 360) * 8;
+      ctx.strokeStyle = `rgba(244,252,255,${bubbleOpacity * (0.45 + hash(i + 390))})`;
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.ellipse(x, sy, r, r * (0.7 + hash(i + 410) * 0.7), hash(i + 430), 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    if (p > 0.55) {
+      for (let i = 0; i < 24; i++) {
+        const worldY = Math.floor((camY - 2400) / 310) * 310 + i * 310;
+        const sy = worldY - camY + 420;
+        const x = 90 + hash(i + 510) * 570;
+        ctx.strokeStyle = `rgba(4,14,34,${0.08 + hash(i + 540) * 0.16})`;
+        ctx.lineWidth = 6 + hash(i + 570) * 14;
+        ctx.beginPath();
+        ctx.moveTo(x - 90, sy - 30);
+        ctx.bezierCurveTo(x - 30, sy + 15, x + 25, sy - 20, x + 120, sy + 35);
+        ctx.stroke();
+      }
+    }
+
+    ctx.restore();
+
+    // Hard outside edge and rim light sell solidity.
+    ctx.save();
+    ctx.strokeStyle = `rgba(214,243,255,${lerp(0.72, 0.16, p)})`;
+    ctx.lineWidth = lerp(8, 3, p);
+    ctx.shadowColor = `rgba(116,211,255,${lerp(0.45, 0.08, p)})`;
+    ctx.shadowBlur = lerp(28, 8, p);
+    ctx.beginPath();
+    for (let sy = -80; sy <= VIEW.h + 80; sy += 24) {
+      const wy = camY + sy - 420;
+      const x = iceEdge(wy);
+      if (sy === -80) ctx.moveTo(x, sy);
+      else ctx.lineTo(x, sy);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function crackWorldX(worldY, id) {
+    const edge = iceEdge(worldY);
+    const inset = 170 + id * 105 + Math.sin(worldY * (0.003 + id * 0.0004) + id) * 65;
+    return edge - inset;
+  }
+
+  function crackHeadDepth() {
+    const p = depthProgress();
+    const cam = cameraDepth();
+    // The fracture catches up in waves, disappears, then lunges again.
+    const lunges =
+      Math.max(0, Math.sin(p * Math.PI * 4.5 - 0.6)) * 620 +
+      Math.max(0, Math.sin(p * Math.PI * 9.0 + 0.9)) * 180;
+    return cam + 160 + lunges;
+  }
+
+  function drawHuntingCracks(camY, p) {
+    if (state.time < 9.2 || state.time > 106) return;
+    const head = crackHeadDepth();
+    const revealFade = clamp(inv(9.2, 14, state.time)) * (1 - clamp(inv(102, 108, state.time)));
+
+    for (let id = 0; id < 3; id++) {
+      ctx.save();
+      ctx.beginPath();
+      let started = false;
+      const startWorld = Math.max(-200, camY - 1900);
+      const endWorld = Math.min(head - id * 90, camY + VIEW.h + 900);
+      for (let wy = startWorld; wy <= endWorld; wy += 34) {
+        const sy = wy - camY + 420;
+        const x = crackWorldX(wy, id);
+        if (!started) {
+          ctx.moveTo(x, sy);
+          started = true;
+        } else {
+          ctx.lineTo(x, sy);
+        }
+      }
+      const alpha = revealFade * (0.56 - id * 0.1) * (0.65 + Math.max(0, Math.sin(state.time * 1.8 + id)) * 0.35);
+      ctx.strokeStyle = `rgba(205,244,255,${alpha})`;
+      ctx.lineWidth = 8 - id * 1.6;
+      ctx.shadowColor = `rgba(69,195,255,${alpha * 0.9})`;
+      ctx.shadowBlur = 24;
+      ctx.stroke();
+
+      // Branches explode out only near the crack head.
+      for (let b = 0; b < 14; b++) {
+        const wy = head - b * 95 - id * 70;
+        if (wy < camY - 800 || wy > camY + VIEW.h + 300) continue;
+        const sy = wy - camY + 420;
+        const x = crackWorldX(wy, id);
+        const side = b % 2 ? 1 : -1;
+        const len = 40 + hash(b + id * 20) * 145;
+        ctx.beginPath();
+        ctx.moveTo(x, sy);
+        ctx.lineTo(x + side * len * 0.45, sy + 38);
+        ctx.lineTo(x + side * len, sy + 70 + hash(b + 90) * 65);
+        ctx.strokeStyle = `rgba(216,247,255,${alpha * 0.68})`;
+        ctx.lineWidth = 3.4;
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    // Fragments break from the edge when the chase gets close.
+    const danger = Math.max(0, Math.sin(p * Math.PI * 5 - 0.3));
+    if (danger > 0.32) {
+      ctx.save();
+      for (let i = 0; i < 14; i++) {
+        const x = iceEdge(camY + 900 + i * 80) + 18 + hash(i + 760) * 80;
+        const y = (i * 151 + state.time * (110 + hash(i) * 120)) % (VIEW.h + 220) - 110;
+        ctx.translate(x, y);
+        ctx.rotate(state.time * 0.9 + i);
+        ctx.fillStyle = `rgba(177,224,250,${0.1 + danger * 0.18})`;
+        ctx.fillRect(-8, -15, 16 + hash(i + 770) * 24, 24 + hash(i + 790) * 50);
+        ctx.setTransform(state.dpr * state.scale, 0, 0, state.dpr * state.scale, state.dpr * state.offsetX, state.dpr * state.offsetY);
+      }
+      ctx.restore();
+    }
+  }
+
+  function drawPhrase(camY) {
+    const item = PHRASES.find((p) => state.time >= p.start && state.time <= p.end);
+    if (!item) return;
+    const t = inv(item.start, item.end, state.time);
+    const fade = Math.sin(t * Math.PI) ** 0.72;
+    const p = depthProgress();
+    const edge = iceEdge(camY + 380);
+    const xBase = clamp(edge - 330, 250, 620);
+    const y = 880 + Math.sin(state.time * 0.72) * 22;
+
+    ctx.save();
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.globalAlpha = fade;
+
+    let size = 54;
+    let spacing = 0;
+    let x = xBase;
+    let color = `rgba(232,249,255,${lerp(0.88, 0.66, p)})`;
+
+    if (item.style === "hero") {
+      size = 72;
+      x = 500;
+      ctx.shadowColor = "rgba(102,213,255,0.7)";
+      ctx.shadowBlur = 34;
+    } else if (item.style === "small") {
+      size = 48;
+      x -= 30;
+    } else if (item.style === "deep") {
+      size = 51;
+      color = "rgba(201,231,255,0.82)";
+      ctx.shadowColor = "rgba(22,99,180,0.65)";
+      ctx.shadowBlur = 18;
+    } else if (item.style === "fracture") {
+      size = 54;
+      ctx.shadowColor = "rgba(173,237,255,0.58)";
+      ctx.shadowBlur = 20;
+    } else if (item.style === "seed") {
+      size = 50;
+      color = "rgba(237,255,210,0.92)";
+      ctx.shadowColor = "rgba(192,255,119,0.7)";
+      ctx.shadowBlur = 26;
+    } else if (item.style === "shelf") {
+      size = 52;
+      x = 490;
+      color = "rgba(237,244,255,0.88)";
+    }
+
+    ctx.font = `500 ${size}px Georgia, 'Times New Roman', serif`;
+    ctx.fillStyle = color;
+
+    if (item.style === "fracture") {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(0, 0, x, VIEW.h);
+      ctx.clip();
+      ctx.fillText(item.text, x + 12, y - 4);
+      ctx.restore();
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(x + 5, 0, VIEW.w - x, VIEW.h);
+      ctx.clip();
+      ctx.fillText(item.text, x - 12, y + 6);
+      ctx.restore();
+    } else if (item.style === "hero" || item.text.includes("f o r e v e r")) {
+      // Manual letter-spacing without relying on experimental canvas APIs.
+      const chars = [...item.text];
+      const widths = chars.map((ch) => ctx.measureText(ch).width);
+      spacing = item.style === "hero" ? 11 : 6;
+      const total = widths.reduce((a, b) => a + b, 0) + spacing * (chars.length - 1);
+      let cx = x - total / 2;
+      for (let i = 0; i < chars.length; i++) {
+        ctx.fillText(chars[i], cx + widths[i] / 2, y);
+        cx += widths[i] + spacing;
+      }
+    } else {
+      ctx.fillText(item.text, x, y);
+    }
+
+    if (item.style === "seed") {
+      const pulseWindow = inv(item.start, item.end, state.time) * 8;
+      const completed = Math.floor(pulseWindow);
+      const pulse = Math.sin((pulseWindow % 1) * Math.PI);
+      const sx = x + 15;
+      const sy = y + 105;
+      for (let i = 0; i < Math.min(completed + 1, 8); i++) {
+        const r = 13 + i * 9 + (i === completed ? pulse * 10 : 0);
+        ctx.strokeStyle = `rgba(218,255,177,${0.22 * (1 - i / 10)})`;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(sx, sy, r, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.fillStyle = "rgba(240,255,204,0.98)";
+      ctx.beginPath();
+      ctx.ellipse(sx, sy, 11, 19, -0.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.restore();
+  }
+
+  function drawLibraryGlimpse(camY) {
+    const center = 45.7;
+    const span = 0.72;
+    const local = 1 - Math.abs(state.time - center) / span;
+    if (local <= 0) return;
+
+    const alpha = smooth(clamp(local));
+    const edge = iceEdge(camY + 300);
+    const chamberX = edge - 440;
+    const chamberY = 640;
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.beginPath();
+    ctx.roundRect(chamberX - 250, chamberY - 250, 480, 510, 90);
+    ctx.clip();
+
+    const g = ctx.createRadialGradient(chamberX, chamberY, 20, chamberX, chamberY, 420);
+    g.addColorStop(0, "rgba(45,67,89,0.96)");
+    g.addColorStop(0.58, "rgba(10,25,44,0.98)");
+    g.addColorStop(1, "rgba(2,7,15,1)");
+    ctx.fillStyle = g;
+    ctx.fillRect(chamberX - 270, chamberY - 280, 540, 560);
+
+    // Gothic arch.
+    ctx.strokeStyle = "rgba(204,233,248,0.22)";
+    ctx.lineWidth = 12;
+    ctx.beginPath();
+    ctx.moveTo(chamberX - 205, chamberY + 230);
+    ctx.lineTo(chamberX - 205, chamberY - 60);
+    ctx.quadraticCurveTo(chamberX, chamberY - 320, chamberX + 205, chamberY - 60);
+    ctx.lineTo(chamberX + 205, chamberY + 230);
+    ctx.stroke();
+
+    // Shelves and books.
+    for (let s = 0; s < 3; s++) {
+      const sx = chamberX - 190 + s * 132;
+      ctx.fillStyle = "rgba(12,16,22,0.92)";
+      ctx.fillRect(sx, chamberY - 80, 105, 300);
+      for (let row = 0; row < 5; row++) {
+        const sy = chamberY - 48 + row * 54;
+        ctx.fillStyle = "rgba(196,217,231,0.12)";
+        ctx.fillRect(sx + 6, sy, 93, 4);
+        for (let b = 0; b < 6; b++) {
+          const bh = 20 + hash(s * 50 + row * 10 + b) * 25;
+          ctx.fillStyle = `rgba(${35 + b * 10},${48 + row * 6},${62 + s * 8},0.88)`;
+          ctx.fillRect(sx + 10 + b * 14, sy - bh, 10, bh);
+        }
+      }
+    }
+
+    ctx.fillStyle = "rgba(235,244,251,0.55)";
+    ctx.font = "bold 22px Georgia, serif";
+    ctx.fillText("D", chamberX - 150, chamberY + 180);
+
+    // Two tiny llamas on the middle shelf.
+    drawTinyLlama(chamberX + 2, chamberY + 145, 1.15);
+    drawTinyLlama(chamberX + 42, chamberY + 148, 1.05);
+
+    // Loose pages suspended in the chamber.
+    for (let i = 0; i < 8; i++) {
+      const x = chamberX - 150 + hash(i + 810) * 320;
+      const y = chamberY - 180 + hash(i + 840) * 310;
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(hash(i + 870) * Math.PI + state.time * 0.3);
+      ctx.fillStyle = "rgba(238,245,250,0.25)";
+      ctx.fillRect(-15, -9, 30, 18);
+      ctx.restore();
+    }
+
+    ctx.restore();
+
+    // Ice closes over it immediately.
+    ctx.save();
+    ctx.globalAlpha = 0.26 * alpha;
+    ctx.fillStyle = "rgba(177,229,255,0.76)";
+    ctx.fillRect(chamberX - 280, chamberY - 280, 560, 560);
+    ctx.restore();
+  }
+
+  function drawTinyLlama(x, y, s) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(s, s);
+    ctx.fillStyle = "rgba(230,237,242,0.9)";
+    ctx.fillRect(-13, -8, 25, 13);
+    ctx.fillRect(7, -22, 9, 20);
+    ctx.fillRect(-9, 4, 4, 12);
+    ctx.fillRect(2, 4, 4, 12);
+    ctx.fillRect(9, 4, 4, 12);
+    ctx.beginPath();
+    ctx.moveTo(9, -20);
+    ctx.lineTo(8, -30);
+    ctx.lineTo(13, -23);
+    ctx.moveTo(15, -20);
+    ctx.lineTo(19, -29);
+    ctx.lineTo(20, -18);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function drawSurfaceScene() {
+    fillGradient("#17283d", "#b7dbe9");
+
+    // Aurora with a hidden D.
+    ctx.save();
+    ctx.globalAlpha = 0.22;
+    for (let band = 0; band < 3; band++) {
+      ctx.beginPath();
+      for (let x = -40; x <= VIEW.w + 40; x += 18) {
+        const y = 160 + band * 74 + Math.sin(x * 0.008 + state.time * 0.18 + band) * 42;
+        if (x === -40) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.strokeStyle = band === 1 ? "rgba(168,255,231,0.3)" : "rgba(117,211,255,0.25)";
+      ctx.lineWidth = 36 - band * 8;
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 0.09;
+    ctx.strokeStyle = "rgba(228,249,255,0.9)";
+    ctx.lineWidth = 15;
+    ctx.beginPath();
+    ctx.moveTo(845, 158);
+    ctx.lineTo(845, 270);
+    ctx.bezierCurveTo(980, 250, 980, 170, 845, 158);
+    ctx.stroke();
+    ctx.restore();
+
+    // Snowfield and exposed side of iceberg.
+    ctx.fillStyle = "rgba(235,249,255,0.98)";
+    ctx.beginPath();
+    ctx.moveTo(0, 1240);
+    ctx.quadraticCurveTo(300, 1135, 620, 1215);
+    ctx.quadraticCurveTo(820, 1275, 1080, 1185);
+    ctx.lineTo(1080, 1920);
+    ctx.lineTo(0, 1920);
+    ctx.closePath();
+    ctx.fill();
+
+    for (let i = 0; i < 90; i++) {
+      const x = hash(i + 900) * VIEW.w;
+      const y = (hash(i + 920) * VIEW.h + state.time * (8 + hash(i) * 12)) % VIEW.h;
+      ctx.globalAlpha = 0.22 + hash(i + 950) * 0.36;
+      ctx.fillStyle = "white";
+      ctx.beginPath();
+      ctx.arc(x, y, 1 + hash(i + 970) * 4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    const kiss = beat("kiss");
+    const slow = active("kiss") ? easeInOut(kiss) : state.time > BEATS.kiss[1] ? 1 : 0;
+    const leftX = lerp(425, 493, slow);
+    const rightX = lerp(655, 587, slow);
+    drawPenguin(leftX, 1180, 1.34, lerp(0, 0.16, slow), false);
+    drawPenguin(rightX, 1180, 1.34, lerp(0, -0.16, slow), true);
+
+    if (state.time > 7.8) drawOpeningCrack(inv(7.8, 12, state.time));
+  }
+
+  function drawPenguin(x, y, s, lean, mirror) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(mirror ? -s : s, s);
+    ctx.rotate(lean);
+    const breathe = Math.sin(state.time * 1.5 + x) * 1.2;
+
+    ctx.fillStyle = "rgba(0,0,0,0.18)";
+    ctx.beginPath();
+    ctx.ellipse(0, 62, 36, 10, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = "#171d24";
+    ctx.beginPath();
+    ctx.ellipse(0, 12 + breathe, 34, 51, -0.05, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = "#eef6fa";
+    ctx.beginPath();
+    ctx.ellipse(5, 18 + breathe, 23, 38, -0.07, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = "#161c23";
+    ctx.beginPath();
+    ctx.arc(0, -35, 27, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = "#f3f9fc";
+    ctx.beginPath();
+    ctx.ellipse(7, -31, 15, 19, -0.08, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = "#dba13c";
+    ctx.beginPath();
+    ctx.moveTo(18, -30);
+    ctx.lineTo(43, -23);
+    ctx.lineTo(17, -17);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = "#12171d";
+    ctx.beginPath();
+    ctx.arc(12, -37, 2.8, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = "rgba(7,10,14,0.42)";
+    ctx.beginPath();
+    ctx.ellipse(-29, 10, 10, 27, 0.25, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = "#dba13c";
+    ctx.beginPath();
+    ctx.ellipse(-13, 62, 13, 5, 0.12, 0, Math.PI * 2);
+    ctx.ellipse(13, 62, 13, 5, -0.12, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function drawOpeningCrack(p) {
+    const q = easeOut(clamp(p));
+    ctx.save();
+    ctx.strokeStyle = "rgba(105,181,221,0.92)";
+    ctx.lineWidth = 6;
+    ctx.shadowColor = "rgba(119,218,255,0.65)";
+    ctx.shadowBlur = 18;
+    ctx.beginPath();
+    ctx.moveTo(540, 1260);
+    ctx.lineTo(510, 1290);
+    ctx.lineTo(560, 1325);
+    ctx.lineTo(470 - q * 190, 1380 + q * 90);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(540, 1260);
+    ctx.lineTo(585, 1295);
+    ctx.lineTo(555, 1340);
+    ctx.lineTo(640 + q * 190, 1415 + q * 100);
+    ctx.stroke();
+
+    // The date is abstracted into tiny angular branches.
+    ctx.globalAlpha = 0.22 * q;
+    ctx.lineWidth = 2;
+    const digits = [17, 3, 2026];
+    digits.forEach((d, i) => {
+      const x = 500 + i * 42;
+      ctx.beginPath();
+      ctx.moveTo(x, 1335 + i * 11);
+      ctx.lineTo(x + 10, 1322 + (d % 5));
+      ctx.lineTo(x + 19, 1342 - (d % 7));
+      ctx.stroke();
+    });
+    ctx.restore();
+  }
+
+  function drawDescent() {
+    const p = depthProgress();
+    const camY = cameraDepth();
+    drawOceanBackdrop(p);
+    drawSolidIce(camY, p);
+    drawLibraryGlimpse(camY);
+    drawHuntingCracks(camY, p);
+    drawPhrase(camY);
+
+    // Tiny camera drift creates a documentary tracking-shot feel.
+    const vignette = ctx.createRadialGradient(540, 880, 240, 540, 940, 920);
+    vignette.addColorStop(0, "rgba(0,0,0,0)");
+    vignette.addColorStop(0.72, "rgba(0,0,0,0.08)");
+    vignette.addColorStop(1, `rgba(0,0,0,${lerp(0.24, 0.55, p)})`);
+    ctx.fillStyle = vignette;
+    ctx.fillRect(0, 0, VIEW.w, VIEW.h);
+  }
+
+  function drawBottomHold() {
+    const p = beat("bottomHold");
+    fillGradient("#061326", "#01040b");
+
+    // The full underside is a single readable shape.
+    ctx.save();
+    ctx.translate(0, lerp(-130, -40, smooth(p)));
+    const g = ctx.createLinearGradient(0, 0, 0, 1040);
+    g.addColorStop(0, "rgba(6,20,48,1)");
+    g.addColorStop(0.65, "rgba(10,42,84,1)");
+    g.addColorStop(1, "rgba(3,13,31,1)");
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.moveTo(-80, -40);
+    ctx.lineTo(1160, -40);
+    ctx.lineTo(1050, 410);
+    ctx.lineTo(870, 640);
+    ctx.lineTo(710, 1030);
+    ctx.lineTo(560, 810);
+    ctx.lineTo(410, 1100);
+    ctx.lineTo(250, 690);
+    ctx.lineTo(80, 540);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.strokeStyle = "rgba(129,211,255,0.28)";
+    ctx.lineWidth = 7;
+    ctx.shadowColor = "rgba(80,190,255,0.34)";
+    ctx.shadowBlur = 20;
+    ctx.stroke();
+    ctx.restore();
+
+    // One beam and a few tiny fragments establish scale.
+    const beam = ctx.createLinearGradient(880, 0, 460, 1500);
+    beam.addColorStop(0, "rgba(111,210,255,0.15)");
+    beam.addColorStop(1, "rgba(111,210,255,0)");
+    ctx.fillStyle = beam;
+    ctx.beginPath();
+    ctx.moveTo(860, 0);
+    ctx.lineTo(1050, 0);
+    ctx.lineTo(680, 1700);
+    ctx.lineTo(520, 1700);
+    ctx.closePath();
+    ctx.fill();
+
+    for (let i = 0; i < 12; i++) {
+      const x = 130 + hash(i + 1100) * 810;
+      const y = (hash(i + 1130) * 1800 + state.time * (18 + hash(i) * 25)) % 1900;
+      ctx.fillStyle = "rgba(180,226,249,0.15)";
+      ctx.fillRect(x, y, 4 + hash(i) * 8, 8 + hash(i + 3) * 16);
+    }
+  }
+
+  function drawConvergeAndShatter() {
+    const converging = active("converge");
+    const p = converging ? beat("converge") : beat("shatter");
+    drawBottomHold();
+
+    if (converging) {
+      const targets = [
+        [[110, 410], [500, 755]],
+        [[930, 340], [500, 755]],
+        [[560, 160], [500, 755]],
+        [[320, 270], [500, 755]],
+      ];
+      ctx.save();
+      ctx.strokeStyle = `rgba(206,244,255,${0.24 + p * 0.64})`;
+      ctx.lineWidth = 7;
+      ctx.shadowColor = "rgba(89,205,255,0.7)";
+      ctx.shadowBlur = 30;
+      targets.forEach(([a, b], i) => {
+        const ex = lerp(a[0], b[0], easeOut(p));
+        const ey = lerp(a[1], b[1], easeOut(p));
+        ctx.beginPath();
+        ctx.moveTo(a[0], a[1]);
+        ctx.lineTo(lerp(a[0], ex, 0.45) + Math.sin(i) * 34, lerp(a[1], ey, 0.45));
+        ctx.lineTo(ex, ey);
+        ctx.stroke();
+      });
+      ctx.restore();
       return;
     }
 
-    state.frameRequest = requestAnimationFrame(frame);
+    const fall = easeIn(p);
+    const slabs = [
+      { x: 305, y: 450, w: 250, h: 470, r: -0.12, dx: -80, dy: 1180 },
+      { x: 550, y: 540, w: 290, h: 520, r: 0.08, dx: 40, dy: 1260 },
+      { x: 765, y: 390, w: 235, h: 430, r: 0.18, dx: 130, dy: 1050 },
+    ];
+    slabs.forEach((s, i) => {
+      ctx.save();
+      ctx.translate(s.x + s.dx * fall, s.y + s.dy * fall);
+      ctx.rotate(s.r + fall * (i - 1) * 0.28);
+      const g = ctx.createLinearGradient(-s.w / 2, -s.h / 2, s.w / 2, s.h / 2);
+      g.addColorStop(0, "rgba(61,123,174,0.96)");
+      g.addColorStop(1, "rgba(5,24,54,0.98)");
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.moveTo(-s.w * 0.5, -s.h * 0.48);
+      ctx.lineTo(s.w * 0.48, -s.h * 0.34);
+      ctx.lineTo(s.w * 0.38, s.h * 0.5);
+      ctx.lineTo(-s.w * 0.42, s.h * 0.38);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = "rgba(164,225,255,0.25)";
+      ctx.lineWidth = 5;
+      ctx.stroke();
+      ctx.restore();
+    });
+
+    ctx.fillStyle = `rgba(0,0,0,${smooth(inv(0.52, 1, p))})`;
+    ctx.fillRect(0, 0, VIEW.w, VIEW.h);
   }
 
-  function begin() {
+  function drawBlackout() {
+    ctx.fillStyle = "#000";
+    ctx.fillRect(0, 0, VIEW.w, VIEW.h);
+  }
+
+  const FISH = Array.from({ length: 14 }, (_, i) => ({
+    seed: i + 0.37,
+    size: 0.65 + hash(i + 1200) * 0.8,
+    delay: hash(i + 1240) * 0.65,
+  }));
+
+  function drawFishScene() {
+    drawBlackout();
+    const p = beat("fish");
+    for (let i = 0; i < FISH.length; i++) {
+      const f = FISH[i];
+      const reveal = smooth(clamp((p - f.delay) / 0.35));
+      if (reveal <= 0) continue;
+      const x = 120 + ((p * 1220 + hash(i + 1280) * 760) % 1240) - 140;
+      const y = 350 + hash(i + 1300) * 1050 + Math.sin(state.time * 0.7 + i) * 70;
+      drawFish(x, y, 22 * f.size, reveal);
+    }
+  }
+
+  function drawFish(x, y, size, alpha) {
+    ctx.save();
+    const glow = ctx.createRadialGradient(x, y, 0, x, y, size * 4.2);
+    glow.addColorStop(0, `rgba(164,255,237,${0.75 * alpha})`);
+    glow.addColorStop(0.25, `rgba(80,224,255,${0.32 * alpha})`);
+    glow.addColorStop(1, "rgba(80,224,255,0)");
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(x, y, size * 4.2, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = "rgba(213,255,247,0.94)";
+    ctx.beginPath();
+    ctx.ellipse(x, y, size, size * 0.48, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(x - size, y);
+    ctx.lineTo(x - size * 1.7, y - size * 0.54);
+    ctx.lineTo(x - size * 1.7, y + size * 0.54);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function drawWhaleScene() {
+    drawBlackout();
+    const p = beat("whale");
+
+    // Fish light crosses the whale instead of the whale entering frame.
+    for (let i = 0; i < 10; i++) {
+      const x = lerp(-180, 1220, (p + i * 0.087) % 1.2);
+      const y = 430 + hash(i + 1350) * 780;
+      drawFish(x, y, 18 + hash(i + 1380) * 18, 0.75);
+    }
+
+    const reveal = smooth(inv(0.12, 0.9, p));
+    ctx.save();
+    ctx.globalAlpha = 0.18 + reveal * 0.68;
+    const whaleG = ctx.createLinearGradient(180, 450, 930, 1300);
+    whaleG.addColorStop(0, "rgba(27,43,58,0.98)");
+    whaleG.addColorStop(1, "rgba(3,9,18,1)");
+    ctx.fillStyle = whaleG;
+    ctx.beginPath();
+    ctx.ellipse(640, 1040, 520, 275, -0.17, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(990, 1020);
+    ctx.lineTo(1160, 900);
+    ctx.lineTo(1120, 1110);
+    ctx.closePath();
+    ctx.fill();
+
+    const ex = 420;
+    const ey = 950;
+    ctx.globalAlpha = reveal;
+    ctx.fillStyle = "rgba(137,181,211,0.14)";
+    ctx.beginPath();
+    ctx.ellipse(ex, ey, 45, 26, 0.05, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "rgba(0,3,8,1)";
+    ctx.beginPath();
+    ctx.arc(ex, ey, 14, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "rgba(233,249,255,0.88)";
+    ctx.beginPath();
+    ctx.arc(ex + 9, ey - 8, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function drawEyeTransition() {
+    const p = beat("eye");
+    drawWhaleScene();
+    const ex = 420;
+    const ey = 950;
+    const r = lerp(14, 1550, easeIn(p));
+    ctx.fillStyle = "#000";
+    ctx.beginPath();
+    ctx.arc(ex, ey, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  function render() {
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = "#02060e";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    beginVirtual();
+
+    if (state.time < BEATS.revealScale[0]) {
+      drawSurfaceScene();
+    } else if (state.time < BEATS.bottomHold[0]) {
+      drawDescent();
+    } else if (active("bottomHold")) {
+      drawBottomHold();
+    } else if (active("converge") || active("shatter")) {
+      drawConvergeAndShatter();
+    } else if (active("blackout")) {
+      drawBlackout();
+    } else if (active("fish")) {
+      drawFishScene();
+    } else if (active("whale")) {
+      drawWhaleScene();
+    } else {
+      drawEyeTransition();
+    }
+  }
+
+  startButton.addEventListener("click", () => {
     intro.classList.add("is-hidden");
     play();
-  }
+  });
 
-  startButton.addEventListener("click", begin);
-  playButton.addEventListener("click", begin);
-  pauseButton.addEventListener("click", pause);
-  restartButton.addEventListener("click", restart);
-  scrubber.addEventListener("input", (event) => {
-    state.time = clamp(Number(event.target.value), 0, TOTAL_DURATION);
-    updateInterface();
+  playPauseButton.addEventListener("click", () => {
+    intro.classList.add("is-hidden");
+    state.playing ? pause() : play();
+  });
+
+  restartButton.addEventListener("click", () => {
+    pause();
+    state.time = 0;
+    updateUI();
+    render();
+  });
+
+  timeline.addEventListener("input", () => {
+    state.time = clamp(Number(timeline.value), 0, TOTAL);
+    updateUI();
     render();
   });
 
   window.addEventListener("resize", resize, { passive: true });
-  window.addEventListener("visibilitychange", () => {
-    if (document.hidden) pause();
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden && state.playing) pause();
   });
 
-  const parameters = new URLSearchParams(window.location.search);
-  const requestedTime = Number(parameters.get("t") ?? parameters.get("time"));
-  if (Number.isFinite(requestedTime)) {
-    state.time = clamp(requestedTime, 0, TOTAL_DURATION);
+  const params = new URLSearchParams(location.search);
+  const requested = Number(params.get("time"));
+  if (Number.isFinite(requested)) {
+    state.time = clamp(requested, 0, TOTAL);
     intro.classList.add("is-hidden");
   }
 
   resize();
-  updateInterface();
+  updateUI();
   render();
 
-  if (parameters.get("autoplay") === "1") {
-    intro.classList.add("is-hidden");
-    play();
-  }
+  if (params.get("autoplay") === "1") play();
 })();
