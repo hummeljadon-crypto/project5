@@ -1,5 +1,154 @@
-css_addition = '''
-/* ===== Lyric caption layer (added) ===== */
+:root {
+  color-scheme: dark;
+  --glass: rgba(7, 13, 23, 0.52);
+  --line: rgba(255, 255, 255, 0.14);
+  --text: rgba(248, 251, 255, 0.96);
+  --muted: rgba(230, 238, 248, 0.68);
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #02050a; }
+body { min-height: 100dvh; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: var(--text); }
+button, input { font: inherit; }
+button { -webkit-tap-highlight-color: transparent; }
+
+.stage {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: #02050a;
+}
+
+#scene {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+}
+
+.stage::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.16;
+  background-image:
+    radial-gradient(circle at 20% 30%, rgba(255,255,255,.07) 0 1px, transparent 1.3px),
+    radial-gradient(circle at 75% 70%, rgba(255,255,255,.05) 0 1px, transparent 1.2px);
+  background-size: 13px 17px, 19px 23px;
+  mix-blend-mode: soft-light;
+}
+
+.intro {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: max(24px, env(safe-area-inset-top)) 22px max(28px, env(safe-area-inset-bottom));
+  background:
+    radial-gradient(circle at 50% 18%, rgba(126, 204, 255, 0.15), transparent 34%),
+    linear-gradient(180deg, rgba(2, 5, 10, 0.25), rgba(2, 5, 10, 0.78));
+  transition: opacity 520ms ease, visibility 520ms ease;
+}
+
+.intro.is-hidden { opacity: 0; visibility: hidden; pointer-events: none; }
+
+.intro__card {
+  width: min(88vw, 390px);
+  padding: 28px 24px 24px;
+  text-align: center;
+  border: 1px solid var(--line);
+  border-radius: 28px;
+  background: linear-gradient(180deg, rgba(17, 27, 43, 0.62), rgba(6, 11, 19, 0.5));
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(18px) saturate(125%);
+}
+
+.intro__eyebrow {
+  margin: 0 0 9px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+}
+
+.intro h1 { margin: 0; font: 500 clamp(42px, 12vw, 66px)/0.95 Georgia, "Times New Roman", serif; letter-spacing: -0.04em; }
+.intro p:not(.intro__eyebrow) { margin: 14px 0 23px; color: var(--muted); font-size: 14px; }
+
+.intro button,
+.player button {
+  border: 1px solid rgba(255,255,255,.16);
+  color: var(--text);
+  background: rgba(255,255,255,.08);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: transform 140ms ease, background 140ms ease;
+}
+.intro button { min-width: 138px; padding: 13px 20px; font-weight: 700; }
+.player button { padding: 9px 14px; font-size: 12px; }
+.intro button:active, .player button:active { transform: scale(.97); }
+
+.player {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: max(12px, env(safe-area-inset-bottom));
+  z-index: 3;
+  padding: 10px 12px 12px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--glass);
+  backdrop-filter: blur(16px) saturate(120%);
+  box-shadow: 0 20px 54px rgba(0,0,0,.25);
+  opacity: .82;
+  transition: opacity 180ms ease;
+}
+.player:hover, .player:focus-within { opacity: 1; }
+.player__row { display: flex; align-items: center; gap: 8px; margin-bottom: 9px; }
+.player output { margin-left: auto; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+
+#timeline {
+  --progress: 0%;
+  appearance: none;
+  width: 100%;
+  height: 5px;
+  border-radius: 999px;
+  outline: none;
+  background: linear-gradient(90deg, rgba(218,244,255,.92) var(--progress), rgba(255,255,255,.13) var(--progress));
+}
+#timeline::-webkit-slider-thumb { appearance: none; width: 16px; height: 16px; border-radius: 50%; background: #edfaff; border: 2px solid rgba(255,255,255,.55); box-shadow: 0 0 0 5px rgba(120,210,255,.12); }
+#timeline::-moz-range-thumb { width: 16px; height: 16px; border-radius: 50%; background: #edfaff; border: 2px solid rgba(255,255,255,.55); box-shadow: 0 0 0 5px rgba(120,210,255,.12); }
+
+@media (min-width: 760px) {
+  .player { left: 50%; right: auto; width: min(640px, calc(100vw - 40px)); transform: translateX(-50%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .intro, .intro button, .player button, .player { transition: none; }
+}
+
+/* ===== Mobile landscape guard ===== */
+.rotate-hint {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  background: #02050a;
+  color: var(--text);
+  place-items: center;
+  text-align: center;
+  padding: 24px;
+  font-size: 15px;
+}
+@media (orientation: landscape) and (max-height: 500px) {
+  .rotate-hint { display: grid; }
+  .stage { display: none; }
+}
+
+/* ===== Lyric caption layer ===== */
 #lyricLayer {
   position: absolute;
   left: 0;
@@ -24,11 +173,3 @@ css_addition = '''
 @media (min-width: 760px) {
   #lyricLayer { bottom: 240px; font-size: clamp(24px, 3.4vw, 34px); }
 }
-'''
-
-with open('output/styles.css', 'a') as f:
-    f.write(css_addition)
-
-with open('output/styles.css') as f:
-    full_css = f.read()
-print(full_css.count('{'), full_css.count('}'))
