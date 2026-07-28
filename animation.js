@@ -1186,7 +1186,7 @@
  const LYRICS = [
     // --- Chorus 1 (30.0s - 52.1s) ---
     { start: 30.00, end: 32.56, text: "I tell her that I love her" },
-    { start: 32.79, end: 35.35, text: "then she said, "Swear" " },
+    { start: 32.79, end: 35.35, text: "then she said, Swear" },
     { start: 35.57, end: 38.13, text: "So here I am singing this" },
     { start: 38.36, end: 40.92, text: "love song showing I care" },
     { start: 41.14, end: 43.71, text: "To fall in love is to take a" },
