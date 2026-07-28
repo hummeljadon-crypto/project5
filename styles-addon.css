@@ -1,0 +1,17 @@
+/* Append this block to the end of your existing styles.css */
+.rotate-hint {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  background: #02050a;
+  color: var(--text);
+  place-items: center;
+  text-align: center;
+  padding: 24px;
+  font-size: 15px;
+}
+@media (orientation: landscape) and (max-height: 500px) {
+  .rotate-hint { display: grid; }
+  .stage { display: none; }
+}

@@ -1,0 +1,9 @@
+{
+  "name": "Forever World",
+  "short_name": "Forever",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#02050a",
+  "theme_color": "#02050a",
+  "icons": []
+}
