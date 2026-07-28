@@ -1214,7 +1214,7 @@
 
     // --- Chorus 2 (96.9s - 118.9s) ---
     { start: 96.86, end: 99.42, text: "I tell her that I love her," },
-    { start: 99.64, end: 102.21, text: "then she said, "Swear"" },
+    { start: 99.64, end: 102.21, text: "then she said, Swear" },
     { start: 102.43, end: 104.99, text: "So here I am singing this" },
     { start: 105.21, end: 107.78, text: "love song showing I care" },
     { start: 108.00, end: 110.56, text: "To fall in love is to take a" },
@@ -1243,7 +1243,7 @@
 
     // --- Chorus 3 (163.7s - 185.8s) ---
     { start: 163.71, end: 166.28, text: "I tell her that I love her," },
-    { start: 166.50, end: 169.06, text: "then she said, "Swear" " },
+    { start: 166.50, end: 169.06, text: "then she said, Swear" },
     { start: 169.29, end: 171.85, text: "So here I am singing this" },
     { start: 172.07, end: 174.63, text: "love song showing I care" },
     { start: 174.86, end: 177.42, text: "To fall in love is to take a" },
