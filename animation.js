@@ -1238,8 +1238,7 @@
     { start: 152.57, end: 155.13, text: "Actually, call me crazy for her love" },
     { start: 155.36, end: 157.92, text: "Call me crazy for her love" },
     { start: 158.14, end: 160.71, text: "Maybe, 'cause I need it all" },
-    { start: 160.93, end: 163.49, text: "She’s a blessing from above, above
-" },
+    { start: 160.93, end: 163.49, text: "She’s a blessing from above, above"},
 
     // --- Chorus 3 (163.7s - 185.8s) ---
     { start: 163.71, end: 166.28, text: "I tell her that I love her," },
