@@ -1,4 +1,4 @@
-js = r'''(() => {
+(() => {
   "use strict";
 
   /* =========================================================
@@ -1183,7 +1183,7 @@ js = r'''(() => {
      are pre-mapped to the song structure: intro silence 0-30s, then
      chorus / verse / chorus / verse / chorus ending at 3:06 (186s).
   ========================================================= */
-  const LYRICS = [
+ const LYRICS = [
     // --- Chorus 1 (30.0s - 52.1s) ---
     { start: 30.00, end: 32.56, text: "I tell her that I love her" },
     { start: 32.79, end: 35.35, text: "then she said, "Swear" " },
@@ -1250,9 +1250,10 @@ js = r'''(() => {
     { start: 177.64, end: 180.21, text: "risk and baby, I'm not scared" },
     { start: 180.43, end: 182.99, text: "I'm only scared when you're not" },
     { start: 183.21, end: 185.78, text: "here, do I make myself clear?" },
-  ];
+ ];
 
   let activeLyric = null;
+
 
   function updateLyrics() {
     if (!lyricLayer) return;
@@ -1384,10 +1385,3 @@ js = r'''(() => {
     play();
   }
 })();
-'''
-with open('output/animation.js', 'w') as f:
-    f.write(js)
-
-print("braces:", js.count('{'), js.count('}'))
-print("parens:", js.count('('), js.count(')'))
-print("lyric entries:", js.count('start:'))
