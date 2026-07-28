@@ -550,16 +550,6 @@
     ctx.restore();
   }
 
-  function crackX(worldY, branch = 0) {
-    return 540 + Math.sin(worldY * 0.00125 + branch * 1.7) * (190 + branch * 34) + Math.sin(worldY * 0.0048 + branch) * 65;
-  }
-
-  function drawPursuitCracks(camY, depth, intensity) {
-    const cameraFront = camY + 420;
-    const pulse = Math.sin(state.time * 0.72) * 420;
-    // Retuned: chase front reaches further (1120 -> 1480) so darkness feels
-    // like it is closing the gap faster and more urgently.
-    const crackFront = camY + lerp(-350, 1480, intensity) + pulse;
 
     ctx.save();
     ctx.lineCap = "round";
@@ -605,18 +595,60 @@
     ctx.restore();
   }
 
-  function drawIceDescent(progress) {
-    const p = smooth(progress);
-    const depth = p;
-    const camY = p * 13200;
-    const sway = Math.sin(p * Math.PI * 5.5) * 70 + Math.sin(p * Math.PI * 13) * 24;
-    const tilt = Math.sin(p * Math.PI * 4) * 0.012;
-    const base = iceColorAtDepth(depth);
-    // Retuned: bottom darkens more gradually (0.48 -> 0.36) so a visible
-    // glow of light lingers even as the crack chases from behind.
-    const top = mixColor(base, [255, 255, 255], lerp(0.12, 0, depth));
-    const bottom = mixColor(base, [0, 4, 15], lerp(0.06, 0.36, depth));
-    fillGradient(rgba(top), rgba(bottom));
+   /* =========================================================
+     STAGE 1 UPDATE: faster, more intense descent with trailing
+     ice debris peeling off the pursuing cracks.
+     Replace your existing crackX, drawPursuitCracks, and
+     drawIceDescent functions with these three in full.
+  ========================================================= */
+
+  function crackX(worldY, branch = 0) {
+    return 540 + Math.sin(worldY * 0.00125 + branch * 1.7) * (190 + branch * 34) + Math.sin(worldY * 0.0048 + branch) * 65;
+  }
+
+  const crackDebris = Array.from({ length: 40 }, (_, i) => ({
+    branch: i % 4,
+    seed: i,
+    lag: hash(i + 900) * 260,
+    drift: -60 + hash(i + 940) * 120,
+    size: 3 + hash(i + 980) * 7,
+  }));
+
+  function drawPursuitCracks(camY, depth, intensity) {
+    const cameraFront = camY + 420;
+    const pulse = Math.sin(state.time * 0.9) * 460;
+    // Faster, more aggressive chase: front reaches much further ahead of
+    // the camera as intensity ramps, and pulses harder for urgency.
+    const crackFront = camY + lerp(-350, 1900, intensity) + pulse;
+
+    ctx.save();
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    for (let branch = 0; branch < 4; branch += 1) {
+      ctx.beginPath();
+      let started = false;
+      for (let wy = Math.max(0, camY - 500); wy <= camY + VIEW.h + 900; wy += 70) {
+        if (wy > crackFront - branch * 180) break;
+        const sy = wy - camY + 240;
+        const x = crackX(wy, branch) + (branch - 1.5) * 70;
+        if (!started) {
+          ctx.moveTo(x, sy);
+          started = true;
+        } else {
+          ctx.lineTo(x, sy);
+        }
+      }
+      const near = clamp(1 - Math.abs(crackFront - cameraFront) / 1700);
+      ctx.shadowBlur = 18 + near * 36;
+      ctx.shadowColor = "rgba(117,222,255,0.7)";
+      ctx.strokeStyle = `rgba(186,235,255,${0.24 + near * 0.66})`;
+      ctx.lineWidth = 2.4 + near * 4;
+      ctx.stroke();
+    }
+
+    if (depth > 0.3) {
+      ctx.globalAlpha = 0.2 + intensity * 0.3;
+      for 
 
     ctx.save();
     ctx.translate(sway, 0);
