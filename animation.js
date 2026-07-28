@@ -1,4 +1,4 @@
-(() => {
+js = r'''(() => {
   "use strict";
 
   /* =========================================================
@@ -12,9 +12,10 @@
   const restartButton = document.querySelector("#restartButton");
   const timeline = document.querySelector("#timeline");
   const timeReadout = document.querySelector("#timeReadout");
+  const lyricLayer = document.querySelector("#lyricLayer");
 
   const VIEW = { w: 1080, h: 1920 };
-  const TOTAL = 164;
+  const TOTAL = 186;
 
   const BEATS = {
     surface: [0, 8],
@@ -30,7 +31,7 @@
     space: [119, 128],
     earth: [128, 139],
     atmosphere: [139, 149],
-    returnSnow: [149, 164],
+    returnSnow: [149, 186],
   };
 
   const state = {
@@ -457,6 +458,7 @@
 
   /* =========================================================
      9. SCENE: ICE DESCENT (bands, facets, bubbles, cracks)
+     -- Retuned: crack-chase feels faster/urgent, light lingers longer
   ========================================================= */
   function iceColorAtDepth(p) {
     const stops = [
@@ -555,7 +557,9 @@
   function drawPursuitCracks(camY, depth, intensity) {
     const cameraFront = camY + 420;
     const pulse = Math.sin(state.time * 0.72) * 420;
-    const crackFront = camY + lerp(-350, 1120, intensity) + pulse;
+    // Retuned: chase front reaches further (1120 -> 1480) so darkness feels
+    // like it is closing the gap faster and more urgently.
+    const crackFront = camY + lerp(-350, 1480, intensity) + pulse;
 
     ctx.save();
     ctx.lineCap = "round";
@@ -608,8 +612,10 @@
     const sway = Math.sin(p * Math.PI * 5.5) * 70 + Math.sin(p * Math.PI * 13) * 24;
     const tilt = Math.sin(p * Math.PI * 4) * 0.012;
     const base = iceColorAtDepth(depth);
+    // Retuned: bottom darkens more gradually (0.48 -> 0.36) so a visible
+    // glow of light lingers even as the crack chases from behind.
     const top = mixColor(base, [255, 255, 255], lerp(0.12, 0, depth));
-    const bottom = mixColor(base, [0, 4, 15], lerp(0.06, 0.48, depth));
+    const bottom = mixColor(base, [0, 4, 15], lerp(0.06, 0.36, depth));
     fillGradient(rgba(top), rgba(bottom));
 
     ctx.save();
@@ -621,7 +627,9 @@
     }
     drawIceFacets(camY, depth);
     drawTrappedBubbles(camY, depth);
-    drawPursuitCracks(camY, depth, clamp(0.2 + p * 0.95));
+    // Retuned: eased ramp (easeIn) makes the chase feel like it accelerates
+    // rather than growing at a flat linear rate.
+    drawPursuitCracks(camY, depth, clamp(0.2 + easeIn(p) * 1.1));
 
     if (depth > 0.7) {
       ctx.save();
@@ -970,7 +978,28 @@
     drawWhaleLocal(1);
     ctx.restore();
 
-    const black = smooth(inv(0.72, 1, p));
+    // Seamless bridge into space: instead of a hard cut to black then stars,
+    // start seeding a handful of stars directly out of the pupil as the
+    // darkness rises, so the eye becomes the starfield rather than being
+    // replaced by it.
+    const black = smooth(inv(0.55, 1, p));
+    if (black > 0) {
+      ctx.save();
+      ctx.globalCompositeOperation = "screen";
+      const seedCount = Math.floor(stars.length * black * 0.35);
+      for (let i = 0; i < seedCount; i += 1) {
+        const star = stars[i];
+        const sx = VIEW.w / 2 + Math.cos(star.a) * star.r * black * 0.4;
+        const sy = VIEW.h / 2 + Math.sin(star.a) * star.r * black * 0.4;
+        ctx.globalAlpha = black * star.alpha;
+        ctx.fillStyle = "#eef8ff";
+        ctx.beginPath();
+        ctx.arc(sx, sy, star.size, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+
     ctx.fillStyle = `rgba(0,0,0,${black})`;
     ctx.fillRect(0, 0, VIEW.w, VIEW.h);
   }
@@ -978,11 +1007,15 @@
   /* =========================================================
      12. SCENE: SPACE / EARTH / ATMOSPHERE
   ========================================================= */
-  function drawStars(progress) {
+  function drawStars(progress, blendIn = 0) {
     fillGradient("#000104", "#000000");
     const p = smooth(progress);
     ctx.save();
     ctx.translate(VIEW.w / 2, VIEW.h / 2);
+    // Continue the same exponential zoom-in energy that drawEyeApproach
+    // ended on, rather than starting flat/static.
+    const zoomContinue = lerp(1.4, 1, clamp(blendIn));
+    ctx.scale(zoomContinue, zoomContinue);
     ctx.rotate(state.time * 0.006);
     for (const star of stars) {
       const appear = clamp((p * 1.45 - star.r / 1500));
@@ -1144,7 +1177,100 @@
   }
 
   /* =========================================================
-     14. MASTER RENDER DISPATCH (BEATS -> scene functions)
+     14. LYRICS SCAFFOLD
+     Fill in the empty text: "" slots yourself with your own copy of
+     the lyrics (kept blank here for copyright reasons). Timestamps
+     are pre-mapped to the song structure: intro silence 0-30s, then
+     chorus / verse / chorus / verse / chorus ending at 3:06 (186s).
+  ========================================================= */
+  const LYRICS = [
+    // --- Chorus 1 (30.0s - 52.1s) ---
+    { start: 30.00, end: 32.56, text: "" },
+    { start: 32.79, end: 35.35, text: "" },
+    { start: 35.57, end: 38.13, text: "" },
+    { start: 38.36, end: 40.92, text: "" },
+    { start: 41.14, end: 43.71, text: "" },
+    { start: 43.93, end: 46.49, text: "" },
+    { start: 46.71, end: 49.28, text: "" },
+    { start: 49.50, end: 52.06, text: "" },
+
+    // --- Verse 1 (52.3s - 96.6s) ---
+    { start: 52.29, end: 54.85, text: "" },
+    { start: 55.07, end: 57.63, text: "" },
+    { start: 57.86, end: 60.42, text: "" },
+    { start: 60.64, end: 63.21, text: "" },
+    { start: 63.43, end: 65.99, text: "" },
+    { start: 66.21, end: 68.78, text: "" },
+    { start: 69.00, end: 71.56, text: "" },
+    { start: 71.79, end: 74.35, text: "" },
+    { start: 74.57, end: 77.13, text: "" },
+    { start: 77.36, end: 79.92, text: "" },
+    { start: 80.14, end: 82.71, text: "" },
+    { start: 82.93, end: 85.49, text: "" },
+    { start: 85.71, end: 88.28, text: "" },
+    { start: 88.50, end: 91.06, text: "" },
+    { start: 91.29, end: 93.85, text: "" },
+    { start: 94.07, end: 96.63, text: "" },
+
+    // --- Chorus 2 (96.9s - 118.9s) ---
+    { start: 96.86, end: 99.42, text: "" },
+    { start: 99.64, end: 102.21, text: "" },
+    { start: 102.43, end: 104.99, text: "" },
+    { start: 105.21, end: 107.78, text: "" },
+    { start: 108.00, end: 110.56, text: "" },
+    { start: 110.79, end: 113.35, text: "" },
+    { start: 113.57, end: 116.13, text: "" },
+    { start: 116.36, end: 118.92, text: "" },
+
+    // --- Verse 2 (119.1s - 163.5s) ---
+    { start: 119.14, end: 121.71, text: "" },
+    { start: 121.93, end: 124.49, text: "" },
+    { start: 124.71, end: 127.28, text: "" },
+    { start: 127.50, end: 130.06, text: "" },
+    { start: 130.29, end: 132.85, text: "" },
+    { start: 133.07, end: 135.63, text: "" },
+    { start: 135.86, end: 138.42, text: "" },
+    { start: 138.64, end: 141.21, text: "" },
+    { start: 141.43, end: 143.99, text: "" },
+    { start: 144.21, end: 146.78, text: "" },
+    { start: 147.00, end: 149.56, text: "" },
+    { start: 149.79, end: 152.35, text: "" },
+    { start: 152.57, end: 155.13, text: "" },
+    { start: 155.36, end: 157.92, text: "" },
+    { start: 158.14, end: 160.71, text: "" },
+    { start: 160.93, end: 163.49, text: "" },
+
+    // --- Chorus 3 (163.7s - 185.8s) ---
+    { start: 163.71, end: 166.28, text: "" },
+    { start: 166.50, end: 169.06, text: "" },
+    { start: 169.29, end: 171.85, text: "" },
+    { start: 172.07, end: 174.63, text: "" },
+    { start: 174.86, end: 177.42, text: "" },
+    { start: 177.64, end: 180.21, text: "" },
+    { start: 180.43, end: 182.99, text: "" },
+    { start: 183.21, end: 185.78, text: "" },
+  ];
+
+  let activeLyric = null;
+
+  function updateLyrics() {
+    if (!lyricLayer) return;
+    const line = LYRICS.find((l) => state.time >= l.start && state.time <= l.end);
+    if (line !== activeLyric) {
+      activeLyric = line;
+      lyricLayer.textContent = line ? line.text : "";
+      lyricLayer.classList.toggle("is-visible", Boolean(line && line.text));
+    } else if (line) {
+      // Fade based on position within the line's own window.
+      const fadeIn = smooth(inv(line.start, line.start + 0.4, state.time));
+      const fadeOut = 1 - smooth(inv(line.end - 0.4, line.end, state.time));
+      lyricLayer.style.opacity = String(Math.min(fadeIn, fadeOut));
+    }
+    if (!line) lyricLayer.style.opacity = "0";
+  }
+
+  /* =========================================================
+     15. MASTER RENDER DISPATCH (BEATS -> scene functions)
   ========================================================= */
   function render() {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -1186,7 +1312,17 @@
     } else if (active("eye")) {
       drawEyeApproach(beat("eye"));
     } else if (active("space")) {
-      drawStars(beat("space"));
+      // Blend continuously from eye into space for the first 0.6s of this
+      // beat so the cut never feels static/hard.
+      const [sa] = BEATS.space;
+      const blendWindow = inv(sa, sa + 0.6, state.time);
+      drawStars(beat("space"), blendWindow);
+      if (blendWindow < 1) {
+        ctx.save();
+        ctx.globalAlpha = 1 - blendWindow;
+        drawEyeApproach(1);
+        ctx.restore();
+      }
     } else if (active("earth")) {
       drawEarthApproach(beat("earth"));
     } else if (active("atmosphere")) {
@@ -1196,10 +1332,12 @@
     } else {
       drawFinalReturn(1);
     }
+
+    updateLyrics();
   }
 
   /* =========================================================
-     15. EVENT WIRING (buttons, timeline scrub, resize, URL params)
+     16. EVENT WIRING (buttons, timeline scrub, resize, URL params)
   ========================================================= */
   startButton.addEventListener("click", () => {
     intro.classList.add("is-hidden");
@@ -1245,3 +1383,10 @@
     play();
   }
 })();
+'''
+with open('output/animation.js', 'w') as f:
+    f.write(js)
+
+print("braces:", js.count('{'), js.count('}'))
+print("parens:", js.count('('), js.count(')'))
+print("lyric entries:", js.count('start:'))
